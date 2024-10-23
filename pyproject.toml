@@ -41,7 +41,8 @@ dependencies = [
   "numpy",
   "pandas",
   "pycocotools",
-  "transformers"
+  "transformers",
+  "loguru"
 ]
 
 [project.optional-dependencies]

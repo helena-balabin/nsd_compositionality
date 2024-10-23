@@ -1,0 +1,3 @@
+data:
+    large_data_path: ${oc.env:LARGE_DATA_PATH}
+    nsd_directory: nsd
