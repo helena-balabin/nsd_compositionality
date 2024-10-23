@@ -1,0 +1,51 @@
+# @package _global_
+
+# to execute this experiment run:
+# python run.py experiment=example_full.yaml
+
+defaults:
+    - override /trainer: null # override trainer to null so it's not loaded from main config defaults...
+    - override /model: null
+    - override /data: null
+    - override /logger: null
+
+# we override default configurations with nulls to prevent them from loading at all
+# instead we define all modules and their paths directly in this config,
+# so everything is stored in one place
+
+seed: 12345
+
+trainer:
+    _target_: pytorch_lightning.Trainer
+    gpus: 0
+    min_epochs: 1
+    max_epochs: 10
+    gradient_clip_val: 0.5
+    accumulate_grad_batches: 2
+    weights_summary: null
+    # resume_from_checkpoint: ${work_dir}/last.ckpt
+
+model:
+    _target_: src.models.mnist_model.MNISTLitModel
+    lr: 0.001
+    weight_decay: 0.00005
+    input_size: 784
+    lin1_size: 256
+    lin2_size: 256
+    lin3_size: 128
+    output_size: 10
+
+data:
+    _target_: src.data.mnist_datamodule.MNISTDataModule
+    data_dir: ${data_dir}
+    batch_size: 64
+    train_val_test_split: [55_000, 5_000, 10_000]
+    num_workers: 0
+    pin_memory: False
+
+logger:
+    wandb:
+        tags: ["best_model"]
+        notes: "Description of this model."
+    csv_logger:
+        save_dir: "."
