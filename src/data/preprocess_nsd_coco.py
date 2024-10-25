@@ -13,14 +13,14 @@ from omegaconf import DictConfig, OmegaConf
 load_dotenv()
 
 
-@hydra.main(config_path="../../configs/preprocessing", config_name="preprocessing")
+@hydra.main(config_path="../../configs/data", config_name="data")
 def preprocess_nsd_coco(cfg: DictConfig) -> None:
     """
     Preprocess the NSD-COCO dataset.
 
     Args:
         cfg (DictConfig): The configuration object loaded by Hydra found in the
-        configs/preprocessing/preprocessing.yaml file.
+        configs/data/data.yaml file.
     """
     logger.info(f"Configuration: {cfg}")
 

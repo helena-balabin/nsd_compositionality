@@ -1,0 +1,26 @@
+data:
+    large_data_path: ${oc.env:LARGE_DATA_PATH}
+    nsd_directory: nsd
+    cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+    data_format: func1pt8mm
+    data_type: betas_fithrf_GLMdenoise_RR
+
+subjects:
+    [
+        "subj01",
+        "subj02",
+        "subj03",
+        "subj04",
+        "subj05",
+        "subj06",
+        "subj07",
+        "subj08",
+    ]
+max_sessions: 5
+test_size: 0.2
+random_state: 42
+debug: true
+
+decoder:
+    estimator: "svc"
+    cv: 5
