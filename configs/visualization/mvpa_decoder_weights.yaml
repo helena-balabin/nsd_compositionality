@@ -1,0 +1,14 @@
+data:
+    input_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+    output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+    nsd_directory: ${oc.env:LARGE_DATA_PATH}/nsd
+    fs_directory: ${oc.env:LARGE_DATA_PATH}/nsd/freesurfer
+
+visualization:
+    colormap: "RdBu_r"
+    threshold: 0.0001
+    alpha: 0.8
+
+mapping:
+    space_from: "func1pt8"
+    betas_type: "betas_fithrf_GLMdenoise_RR"
