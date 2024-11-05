@@ -1,16 +1,18 @@
 """MVPA decoder for NSD data using nilearn."""
 
+import os
 from pathlib import Path
 
 import hydra
+import nibabel as nib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from loguru import logger
+from nilearn import plotting
 from nilearn.decoding import Decoder
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
-from sklearn.model_selection import train_test_split
 
 load_dotenv()
 
@@ -29,10 +31,25 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
 
     # Load NSD-VG metadata
     nsd_vg_metadata = pd.read_csv(nsd_dir / "nsd_vg" / "nsd_vg_metadata.csv")
+    if cfg.binarize_target:
+        # Binarize sg_depth into "high" and "low" depending on half between min and max
+        min_sg_depth = nsd_vg_metadata["sg_depth"].min()
+        max_sg_depth = nsd_vg_metadata["sg_depth"].max()
+        median_sg_depth = (min_sg_depth + max_sg_depth) / 2
+        nsd_vg_metadata["sg_depth"] = (nsd_vg_metadata["sg_depth"] > median_sg_depth).astype(int)
 
     # Process each subject
     for subject in cfg.subjects:
         logger.info(f"Processing subject {subject}")
+
+        # Load the "nsdgeneral" mask for a given subject
+        mask_raw = nib.load(
+            nsd_dir / "nsddata" / "ppdata" / f"{subject}" / f"{cfg.data.data_format}" / "roi" / "nsdgeneral.nii.gz"
+        )
+        # Replace -1 with 0 in the mask
+        mask = mask_raw.get_fdata()
+        mask[mask == -1] = 0
+        mask = nib.Nifti1Image(mask, affine=mask_raw.affine, header=mask_raw.header)
 
         # Get betas for all sessions for the subject
         all_betas = []
@@ -68,23 +85,41 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
         # Index the betas with the trial_index (trial_index starts at 1)
         X = betas[:, :, :, trial_info_short["trial_index"].values - 1]
         y = trial_info_short["sg_depth"].values
+        # Log the number of examples for this subject
+        logger.info(f"Number of examples for subject {subject}: {X.shape[0]}")
 
-        # TODO get the nibabel format working
-        # https://nilearn.github.io/dev/auto_examples/00_tutorials/
-        # plot_decoding_tutorial.html#sphx-glr-auto-examples-00-tutorials-plot-decoding-tutorial-py
-        # TODO make sure that the same cocoId is not present in both train and test
-        # Split data into train and test sets
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, test_size=cfg.test_size, random_state=cfg.random_state
+        # Get the correct affine and header for this subject
+        affine, header = nsd.affine_header(subject, data_format=cfg.data.data_format)
+        X_nifti = nib.Nifti1Image(X, affine=affine, header=header)
+
+        # TODO make sure stimuli are not repeated in training and testing
+        # Initialize and run the decoder with cross-validation
+        decoder = Decoder(
+            estimator=cfg.decoder.estimator,
+            cv=cfg.decoder.cv,
+            scoring="roc_auc",
+            mask=mask,
         )
+        decoder.fit(X_nifti, y)
 
-        # Initialize and run the decoder
-        decoder = Decoder(estimator=cfg.decoder.estimator, cv=cfg.decoder.cv)
-        decoder.fit(X_train, y_train)
+        # Get cross-validation scores
+        cv_scores = decoder.cv_scores_
 
-        # Evaluate the decoder
-        score = decoder.score(X_test, y_test)
-        logger.info(f"Decoder score for subject {subject}: {score}")
+        # Save the coef_img_ of the positive class
+        nib.save(decoder.coef_img_[1], os.path.join(cfg.data.output_dir, f"decoder_weights_{subject}_1.nii.gz"))
+
+        # For each class in the cv_scores dict:
+        for class_name, scores in cv_scores.items():
+            mean_score = np.mean(scores)
+            std_score = np.std(scores)
+            logger.info(
+                f"Cross-validation scores for subject {subject} and class {class_name}: "
+                f"{mean_score:.3f} ± {std_score:.3f}"
+            )
+            # Generate a plot with the weights of the decoder and save it
+            plot = plotting.view_img(decoder.coef_img_[class_name], title=f"Decoder weights for {class_name}", dim=-1)
+            # Save the plot as a html file
+            plot.save_as_html(f"decoder_weights_{subject}_{class_name}.html")
 
     logger.info("MVPA decoding complete.")
 
