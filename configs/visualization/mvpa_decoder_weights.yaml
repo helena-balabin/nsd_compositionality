@@ -6,9 +6,19 @@ data:
 
 visualization:
     colormap: "cold_hot"
-    threshold: 0.0001
+    threshold: 0.0005
 
 mapping:
     space_from: "func1pt8"
     space_to: "fsaverage"
     betas_type: "betas_fithrf_GLMdenoise_RR"
+
+target_variables:
+    [
+        "sg_filtered_depth",
+        "n_filtered_rel",
+        "n_obj",
+        "avg_node_degree",
+        "avg_node_connectivity",
+        "avg_clustering_coefficient",
+    ]

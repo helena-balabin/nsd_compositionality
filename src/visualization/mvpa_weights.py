@@ -1,6 +1,7 @@
 """Visualization of MVPA decoder weights using pycortex."""
 
 import logging
+import re
 from pathlib import Path
 
 import hydra
@@ -24,62 +25,68 @@ def run_visualization(cfg: DictConfig) -> None:
     output_dir = Path(cfg.data.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    # Load decoder weights
-    weight_files = list(Path(cfg.data.input_dir).glob("*weights*.nii.gz"))
-    logger.info(f"Found {len(weight_files)} weight files")
+    # Iterate through all target variables
+    for target_variable in cfg.target_variables:
+        # Load decoder weights
+        weight_files = list(Path(cfg.data.input_dir).glob(f"*weights*{target_variable}*.nii.gz"))
+        logger.info(f"Found {len(weight_files)} weight files")
 
-    for weight_file in weight_files:
-        logger.info(f"Processing {weight_file.name}")
+        for weight_file in weight_files:
+            logger.info(f"Processing {weight_file.name}")
 
-        # Get subject index from filename
-        subject_index = int(weight_file.stem.split("_")[-2].strip("subj0"))
+            # Get subject index from filename
+            # Get the "subjXX" part of the filename with a regex
+            subject_index = int(re.search(r"subj\d+", weight_file.name).group(0).replace("subj", ""))  # type: ignore
 
-        # Map from functional data to cortical surface
-        nsd_mapper = NSDmapdata(cfg.data.nsd_directory)
+            # Map from functional data to cortical surface
+            nsd_mapper = NSDmapdata(cfg.data.nsd_directory)
 
-        weights_img_list = {}
+            weights_img_list = {}
 
-        for hemisphere in ["right", "left"]:
-            # 1. Map from functional to "white"
-            weights_img = nsd_mapper.fit(
-                subject_index,
-                cfg.mapping.space_from,
-                f"{hemisphere[0]}h.white",
-                str(weight_file),
+            for hemisphere in ["right", "left"]:
+                # 1. Map from functional to "white"
+                weights_img = nsd_mapper.fit(
+                    subject_index,
+                    cfg.mapping.space_from,
+                    f"{hemisphere[0]}h.white",
+                    str(weight_file),
+                )
+                # 2. Map from "white" to "fsaverage"
+                weights_img = nsd_mapper.fit(
+                    subject_index,
+                    f"{hemisphere[0]}h.white",
+                    cfg.mapping.space_to,
+                    weights_img,
+                )
+                weights_img_list[hemisphere] = weights_img
+
+            # Load the background mesh
+            big_fsaverage_meshes = load_fsaverage("fsaverage")
+            big_fsaverage_sulcal = load_fsaverage_data(mesh_name="fsaverage", data_type="sulcal", mesh_type="inflated")
+
+            # Convert the projected beta data to the right format
+            data = PolyData(right=weights_img_list["right"], left=weights_img_list["left"])
+            big_img = SurfaceImage(
+                mesh=big_fsaverage_meshes["pial"],  # Pial vs inflated?
+                data=data,
             )
-            # 2. Map from "white" to "fsaverage"
-            weights_img = nsd_mapper.fit(
-                subject_index,
-                f"{hemisphere[0]}h.white",
-                cfg.mapping.space_to,
-                weights_img,
+
+            # Generate the plot
+            plot_surf_stat_map(
+                stat_map=big_img,
+                surf_mesh=big_fsaverage_meshes["inflated"],
+                colorbar=True,
+                title="Surface fine mesh",
+                bg_map=big_fsaverage_sulcal,
+                threshold=cfg.visualization.threshold,
+                output_file=output_dir / f"weights_subj{subject_index}_{target_variable}_surface.png",
+                cmap=cfg.visualization.colormap,
             )
-            weights_img_list[hemisphere] = weights_img
 
-        # Load the background mesh
-        big_fsaverage_meshes = load_fsaverage("fsaverage")
-        big_fsaverage_sulcal = load_fsaverage_data(mesh_name="fsaverage", data_type="sulcal", mesh_type="inflated")
-
-        # Convert the projected beta data to the right format
-        data = PolyData(right=weights_img_list["right"], left=weights_img_list["left"])
-        big_img = SurfaceImage(
-            mesh=big_fsaverage_meshes["pial"],  # Pial vs inflated?
-            data=data,
-        )
-
-        # Generate the plot
-        plot_surf_stat_map(
-            stat_map=big_img,
-            surf_mesh=big_fsaverage_meshes["inflated"],
-            colorbar=True,
-            title="Surface fine mesh",
-            bg_map=big_fsaverage_sulcal,
-            threshold=cfg.visualization.threshold,
-            output_file=output_dir / f"weights_subj{subject_index}_surface.png",
-            cmap=cfg.visualization.cmap,
-        )
-
-        logger.info(f"Saved weights visualization to {output_dir / f'weights_subj{subject_index}_surface.png'}")
+            logger.info(
+                f"Saved weights visualization to "
+                f"{output_dir / f'weights_subj{subject_index}_{target_variable}_surface.png'}"
+            )
 
 
 if __name__ == "__main__":
