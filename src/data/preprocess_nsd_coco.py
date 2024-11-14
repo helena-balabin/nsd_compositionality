@@ -1,15 +1,16 @@
 """Preprocess the NSD metadata so that the COCO metadata can be added to it."""
 
+import logging
 from pathlib import Path
 
 import hydra
 import pandas as pd
 from datasets import load_dataset
 from dotenv import load_dotenv
-from loguru import logger
 from nsd_access import NSDAccess
 from omegaconf import DictConfig, OmegaConf
 
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 

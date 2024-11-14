@@ -1,13 +1,15 @@
 """Visualization of MVPA decoder weights using pycortex."""
 
+import logging
 from pathlib import Path
 
 import hydra
-from loguru import logger
 from nilearn.experimental.surface import PolyData, SurfaceImage, load_fsaverage, load_fsaverage_data
 from nilearn.plotting import plot_surf_stat_map
 from nsdcode import NSDmapdata
 from omegaconf import DictConfig
+
+logger = logging.getLogger(__name__)
 
 
 @hydra.main(config_path="../../configs/visualization", config_name="mvpa_decoder_weights")
