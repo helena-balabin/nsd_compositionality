@@ -21,8 +21,17 @@ max_sessions: 5
 test_size: 0.2
 random_state: 42
 binarize_target: true
-debug: true
+target_variables:
+    [
+        "sg_filtered_depth",
+        "n_filtered_rel",
+        "n_obj",
+        "avg_node_degree",
+        "avg_node_connectivity",
+        "avg_clustering_coefficient",
+    ]
 
 decoder:
     estimator: "ridge_classifier"
-    cv: 5
+    scoring: "roc_auc"
+    screening_percentile: 20

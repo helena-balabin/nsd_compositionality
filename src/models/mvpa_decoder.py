@@ -1,5 +1,6 @@
 """MVPA decoder for NSD data using nilearn."""
 
+import logging
 import os
 from pathlib import Path
 
@@ -8,19 +9,19 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from loguru import logger
-from nilearn import plotting
 from nilearn.decoding import Decoder
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
+from scipy.stats import zscore
 
+logger = logging.getLogger(__name__)
 load_dotenv()
 
 
 @hydra.main(config_path="../../configs/model", config_name="mvpa_decoder")
 def run_mvpa_decoder(cfg: DictConfig) -> None:
     """
-    Run MVPA decoder on NSD data to predict 'sg_depth'.
+    Run MVPA decoder on NSD data to predict a target variable from the NSD-COCO overlap.
 
     Args:
         cfg (DictConfig): The configuration object loaded by Hydra.
@@ -31,25 +32,10 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
 
     # Load NSD-VG metadata
     nsd_vg_metadata = pd.read_csv(nsd_dir / "nsd_vg" / "nsd_vg_metadata.csv")
-    if cfg.binarize_target:
-        # Binarize sg_depth into "high" and "low" depending on half between min and max
-        min_sg_depth = nsd_vg_metadata["sg_depth"].min()
-        max_sg_depth = nsd_vg_metadata["sg_depth"].max()
-        median_sg_depth = (min_sg_depth + max_sg_depth) / 2
-        nsd_vg_metadata["sg_depth"] = (nsd_vg_metadata["sg_depth"] > median_sg_depth).astype(int)
 
     # Process each subject
     for subject in cfg.subjects:
         logger.info(f"Processing subject {subject}")
-
-        # Load the "nsdgeneral" mask for a given subject
-        mask_raw = nib.load(
-            nsd_dir / "nsddata" / "ppdata" / f"{subject}" / f"{cfg.data.data_format}" / "roi" / "nsdgeneral.nii.gz"
-        )
-        # Replace -1 with 0 in the mask
-        mask = mask_raw.get_fdata()
-        mask[mask == -1] = 0
-        mask = nib.Nifti1Image(mask, affine=mask_raw.affine, header=mask_raw.header)
 
         # Get betas for all sessions for the subject
         all_betas = []
@@ -57,6 +43,11 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
             session_betas = nsd.read_betas(
                 subject, session_index=session, data_format=cfg.data.data_format, data_type=cfg.data.data_type
             )
+            # z-scoring of session-betas along the last axis (i.e., for each voxel across trials within a session)
+            session_betas = zscore(session_betas, axis=-1)
+            # Replace NaNs with 0s (that may result from dividing by 0)
+            # If there is no variance in a voxel across trials, then we're not interested in it anyways
+            session_betas = np.nan_to_num(session_betas)
             all_betas.append(session_betas)
 
         # Concatenate all betas
@@ -81,45 +72,53 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
         # Sort by trial_index
         trial_info_short = trial_info_short.sort_values(by="trial_index").reset_index(drop=True)
 
-        # Extract features (betas) and target (sg_depth)
+        # Extract features (betas) and target
         # Index the betas with the trial_index (trial_index starts at 1)
+        # Define train and test set
         X = betas[:, :, :, trial_info_short["trial_index"].values - 1]
-        y = trial_info_short["sg_depth"].values
+
+        # Use the "shared 1000" as the validation set, and the rest as the training set
+        X_train = X[:, :, :, trial_info_short["shared1000"] == False]  # noqa: E712
+        X_test = X[:, :, :, trial_info_short["shared1000"] == True]  # noqa: E712
         # Log the number of examples for this subject
-        logger.info(f"Number of examples for subject {subject}: {X.shape[0]}")
+        logger.info(f"Number of examples for subject {subject}: {X.shape[-1]}")
 
         # Get the correct affine and header for this subject
         affine, header = nsd.affine_header(subject, data_format=cfg.data.data_format)
-        X_nifti = nib.Nifti1Image(X, affine=affine, header=header)
+        X_train_nifti = nib.Nifti1Image(X_train, affine=affine, header=header)
+        X_test_nifti = nib.Nifti1Image(X_test, affine=affine, header=header)
 
-        # TODO make sure stimuli are not repeated in training and testing
-        # Initialize and run the decoder with cross-validation
-        decoder = Decoder(
-            estimator=cfg.decoder.estimator,
-            cv=cfg.decoder.cv,
-            scoring="roc_auc",
-            mask=mask,
-        )
-        decoder.fit(X_nifti, y)
+        for target_variable in cfg.target_variables:
+            # Define the target variable
+            if cfg.binarize_target:
+                # Binarize the target into "high" and "low" depending on half between min and max
+                median = np.percentile(trial_info_short[target_variable], 50)
+                trial_info_short[target_variable] = (trial_info_short[target_variable] > median).astype(int)
+            y = trial_info_short[target_variable].values
+            y_train = y[trial_info_short["shared1000"] == False]  # noqa: E712
+            y_test = y[trial_info_short["shared1000"] == True]  # noqa: E712
 
-        # Get cross-validation scores
-        cv_scores = decoder.cv_scores_
-
-        # Save the coef_img_ of the positive class
-        nib.save(decoder.coef_img_[1], os.path.join(cfg.data.output_dir, f"decoder_weights_{subject}_1.nii.gz"))
-
-        # For each class in the cv_scores dict:
-        for class_name, scores in cv_scores.items():
-            mean_score = np.mean(scores)
-            std_score = np.std(scores)
-            logger.info(
-                f"Cross-validation scores for subject {subject} and class {class_name}: "
-                f"{mean_score:.3f} ± {std_score:.3f}"
+            # Don't use a mask in order to do whole-brain decoding
+            decoder = Decoder(
+                estimator=cfg.decoder.estimator,
+                scoring=cfg.decoder.scoring,
+                screening_percentile=cfg.decoder.screening_percentile,
+                standardize=False,  # we've already z-scored the data per session
+                cv=None,
             )
-            # Generate a plot with the weights of the decoder and save it
-            plot = plotting.view_img(decoder.coef_img_[class_name], title=f"Decoder weights for {class_name}", dim=-1)
-            # Save the plot as a html file
-            plot.save_as_html(f"decoder_weights_{subject}_{class_name}.html")
+            decoder.fit(X_train_nifti, y_train)
+            score = decoder.score(X_test_nifti, y_test)
+
+            logger.info(
+                f"Decoder {cfg.decoder.scoring} score for subject {subject} and "
+                f"target variable {target_variable} on the test set: {score}"
+            )
+
+            # Save the coef_img_ for the weights from the training data and positive class
+            nib.save(
+                decoder.coef_img_[1],
+                os.path.join(cfg.data.output_dir, f"decoder_weights_{subject}_{target_variable}_1.nii.gz"),
+            )
 
     logger.info("MVPA decoding complete.")
 
