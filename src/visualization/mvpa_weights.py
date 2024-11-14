@@ -3,9 +3,10 @@
 from pathlib import Path
 
 import hydra
-import nibabel as nib
 from loguru import logger
-from nilearn import plotting
+from nilearn.experimental.surface import PolyData, SurfaceImage, load_fsaverage, load_fsaverage_data
+from nilearn.plotting import plot_surf_stat_map
+from nsdcode import NSDmapdata
 from omegaconf import DictConfig
 
 
@@ -28,27 +29,54 @@ def run_visualization(cfg: DictConfig) -> None:
     for weight_file in weight_files:
         logger.info(f"Processing {weight_file.name}")
 
-        # Load weights
-        weights_img = nib.load(weight_file)
+        # Get subject index from filename
         subject_index = int(weight_file.stem.split("_")[-2].strip("subj0"))
 
-        # nsd/nsddata_betas/ppdata/subj0X/func1pt8mm/
-        # betas_fithrf_GLMdenoise_RR/betas_session01.nii.gz as background image
-        background_img = nib.load(
-            Path(cfg.data.nsd_directory) / f"nsddata_betas/ppdata/subj0{subject_index}/"
-            f"{cfg.mapping.space_from}/{cfg.mapping.betas_type}/betas_session01.nii.gz"
-        )
-        # But only take the first volume
-        background_img = nib.Nifti1Image(background_img.get_fdata()[:, :, :, 0], background_img.affine)
+        # Map from functional data to cortical surface
+        nsd_mapper = NSDmapdata(cfg.data.nsd_directory)
 
-        # Plot
-        display = plotting.plot_stat_map(
-            weights_img,
-            cmap=cfg.visualization.colormap,
-            bg_img=background_img,
+        weights_img_list = {}
+
+        for hemisphere in ["right", "left"]:
+            # 1. Map from functional to "white"
+            weights_img = nsd_mapper.fit(
+                subject_index,
+                cfg.mapping.space_from,
+                f"{hemisphere[0]}h.white",
+                str(weight_file),
+            )
+            # 2. Map from "white" to "fsaverage"
+            weights_img = nsd_mapper.fit(
+                subject_index,
+                f"{hemisphere[0]}h.white",
+                cfg.mapping.space_to,
+                weights_img,
+            )
+            weights_img_list[hemisphere] = weights_img
+
+        # Load the background mesh
+        big_fsaverage_meshes = load_fsaverage("fsaverage")
+        big_fsaverage_sulcal = load_fsaverage_data(mesh_name="fsaverage", data_type="sulcal", mesh_type="inflated")
+
+        # Convert the projected beta data to the right format
+        data = PolyData(right=weights_img_list["right"], left=weights_img_list["left"])
+        big_img = SurfaceImage(
+            mesh=big_fsaverage_meshes["pial"],  # Pial vs inflated?
+            data=data,
         )
-        display.savefig(output_dir / f"weights_subj{subject_index}.png")
-        logger.info(f"Saved weights visualization to {output_dir / f'weights_subj{subject_index}.png'}")
+
+        # Generate the plot
+        plot_surf_stat_map(
+            stat_map=big_img,
+            surf_mesh=big_fsaverage_meshes["inflated"],
+            colorbar=True,
+            title="Surface fine mesh",
+            bg_map=big_fsaverage_sulcal,
+            threshold=1e-7,
+            output_file=output_dir / f"weights_subj{subject_index}_surface.png",
+        )
+
+        logger.info(f"Saved weights visualization to {output_dir / f'weights_subj{subject_index}_surface.png'}")
 
 
 if __name__ == "__main__":

@@ -11,4 +11,5 @@ visualization:
 
 mapping:
     space_from: "func1pt8"
+    space_to: "fsaverage"
     betas_type: "betas_fithrf_GLMdenoise_RR"
