@@ -17,8 +17,7 @@ subjects:
         "subj07",
         "subj08",
     ]
-max_sessions: 5
-test_size: 0.2
+max_sessions: 40
 random_state: 42
 binarize_target: true
 target_variables:
