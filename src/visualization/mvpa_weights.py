@@ -74,8 +74,9 @@ def run_visualization(cfg: DictConfig) -> None:
             colorbar=True,
             title="Surface fine mesh",
             bg_map=big_fsaverage_sulcal,
-            threshold=1e-7,
+            threshold=cfg.visualization.threshold,
             output_file=output_dir / f"weights_subj{subject_index}_surface.png",
+            cmap=cfg.visualization.cmap,
         )
 
         logger.info(f"Saved weights visualization to {output_dir / f'weights_subj{subject_index}_surface.png'}")

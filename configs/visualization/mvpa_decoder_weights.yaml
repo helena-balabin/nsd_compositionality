@@ -5,9 +5,8 @@ data:
     fs_directory: ${oc.env:LARGE_DATA_PATH}/nsd/freesurfer
 
 visualization:
-    colormap: "RdBu_r"
+    colormap: "cold_hot"
     threshold: 0.0001
-    alpha: 0.8
 
 mapping:
     space_from: "func1pt8"
