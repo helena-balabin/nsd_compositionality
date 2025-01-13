@@ -5,8 +5,10 @@ import re
 from pathlib import Path
 
 import hydra
-from nilearn.experimental.surface import PolyData, SurfaceImage, load_fsaverage, load_fsaverage_data
+import nibabel as nib
+from nilearn.datasets import load_fsaverage, load_fsaverage_data, load_mni152_template
 from nilearn.plotting import plot_surf_stat_map
+from nilearn.surface import SurfaceImage
 from nsdcode import NSDmapdata
 from omegaconf import DictConfig
 
@@ -28,7 +30,9 @@ def run_visualization(cfg: DictConfig) -> None:
     # Iterate through all target variables
     for target_variable in cfg.target_variables:
         # Load decoder weights
-        weight_files = list(Path(cfg.data.input_dir).glob(f"*weights*{target_variable}*.nii.gz"))
+        # TODO for later
+        # weight_files = list(Path(cfg.data.input_dir).glob(f"*{target_variable}*searchlight*.nii.gz"))
+        weight_files = list(Path(cfg.data.input_dir).glob(f"*{target_variable}_1.nii.gz"))
         logger.info(f"Found {len(weight_files)} weight files")
 
         for weight_file in weight_files:
@@ -41,52 +45,50 @@ def run_visualization(cfg: DictConfig) -> None:
             # Map from functional data to cortical surface
             nsd_mapper = NSDmapdata(cfg.data.nsd_directory)
 
-            weights_img_list = {}
+            # Map from functional to MNI
+            weights_img = nsd_mapper.fit(
+                subject_index,
+                cfg.mapping.space_from,
+                cfg.mapping.space_to,
+                str(weight_file),
+                badval=0,
+            )
+            # The resulting variable is in RPI format, see the following:
+            # "When using nsd_mapdata to map to MNI space, note that the output variable is
+            # returned to the workspace in RPI ordering. But notice that if you ask nsd_mapdata
+            # to write out a NIFTI file, that file has data stored in LPI ordering."
+            # Convert weights_img (a 3D numpy array) to an niimg-like object
+            mni = load_mni152_template()
+            weights_img = nib.Nifti1Image(weights_img, mni.affine)
 
-            for hemisphere in ["right", "left"]:
-                # 1. Map from functional to "white"
-                weights_img = nsd_mapper.fit(
-                    subject_index,
-                    cfg.mapping.space_from,
-                    f"{hemisphere[0]}h.white",
-                    str(weight_file),
-                )
-                # 2. Map from "white" to "fsaverage"
-                weights_img = nsd_mapper.fit(
-                    subject_index,
-                    f"{hemisphere[0]}h.white",
-                    cfg.mapping.space_to,
-                    weights_img,
-                )
-                weights_img_list[hemisphere] = weights_img
-
-            # Load the background mesh
-            big_fsaverage_meshes = load_fsaverage("fsaverage")
-            big_fsaverage_sulcal = load_fsaverage_data(mesh_name="fsaverage", data_type="sulcal", mesh_type="inflated")
-
-            # Convert the projected beta data to the right format
-            data = PolyData(right=weights_img_list["right"], left=weights_img_list["left"])
-            big_img = SurfaceImage(
-                mesh=big_fsaverage_meshes["pial"],  # Pial vs inflated?
-                data=data,
+            # Load fsaverage
+            fsaverage = load_fsaverage("fsaverage")
+            fsaverage_sulcal = load_fsaverage_data(
+                mesh="fsaverage",
+                data_type="sulcal",
+                mesh_type="inflated",
+            )
+            # Get surface from MNI projection
+            surface_image = SurfaceImage.from_volume(
+                volume_img=weights_img,
+                mesh=fsaverage["pial"],
             )
 
+            # Generate the output file path
+            output_file = output_dir / weight_file.with_name(weight_file.stem.split(".")[0] + "_surface.png").name
             # Generate the plot
             plot_surf_stat_map(
-                stat_map=big_img,
-                surf_mesh=big_fsaverage_meshes["inflated"],
+                stat_map=surface_image,
+                surf_mesh=fsaverage["inflated"],
                 colorbar=True,
                 title="Surface fine mesh",
-                bg_map=big_fsaverage_sulcal,
+                bg_map=fsaverage_sulcal,
                 threshold=cfg.visualization.threshold,
-                output_file=output_dir / f"weights_subj{subject_index}_{target_variable}_surface.png",
+                output_file=output_file,
                 cmap=cfg.visualization.colormap,
             )
 
-            logger.info(
-                f"Saved weights visualization to "
-                f"{output_dir / f'weights_subj{subject_index}_{target_variable}_surface.png'}"
-            )
+            logger.info(f"Saved weights visualization to {output_file}")
 
 
 if __name__ == "__main__":
