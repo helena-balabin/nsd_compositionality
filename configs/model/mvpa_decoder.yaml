@@ -20,13 +20,14 @@ subjects:
 max_sessions: 40
 random_state: 42
 binarize_target: true
-target_variables: [
+target_variables:
+  [
     "sg_filtered_depth",
-    # "n_filtered_rel",
-    # "n_obj",
-    # "avg_node_degree",
-    # "avg_node_connectivity",
-    # "avg_clustering_coefficient",
+    "n_filtered_rel",
+    "n_obj",
+    "avg_node_degree",
+    "avg_node_connectivity",
+    "avg_clustering_coefficient",
   ]
 
 searchlight:
