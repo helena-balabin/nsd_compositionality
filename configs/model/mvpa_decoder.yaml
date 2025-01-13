@@ -17,7 +17,7 @@ subjects:
     "subj07",
     "subj08",
   ]
-max_sessions: 5
+max_sessions: 40
 random_state: 42
 binarize_target: true
 target_variables: [
