@@ -42,7 +42,9 @@ dependencies = [
   "pandas",
   "pycocotools",
   "transformers",
-  "loguru"
+  "loguru",
+  "plotly",
+  "kaleido"
 ]
 
 [project.optional-dependencies]
