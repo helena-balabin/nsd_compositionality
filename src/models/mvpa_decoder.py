@@ -1,7 +1,7 @@
-"""MVPA decoder for NSD data using nilearn."""
+"""MVPA searchlight decoder for NSD data."""
 
 import logging
-import os
+import warnings
 from pathlib import Path
 
 import hydra
@@ -9,19 +9,20 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from nilearn.decoding import Decoder
+from nilearn.decoding import SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
 from scipy.stats import zscore
 
 logger = logging.getLogger(__name__)
 load_dotenv()
+warnings.filterwarnings("ignore")
 
 
 @hydra.main(config_path="../../configs/model", config_name="mvpa_decoder")
-def run_mvpa_decoder(cfg: DictConfig) -> None:
+def run_searchlight_decoder(cfg: DictConfig) -> None:
     """
-    Run MVPA decoder on NSD data to predict a target variable from the NSD-COCO overlap.
+    Run MVPA searchlight decoder on NSD data to predict a target variable from the NSD-COCO overlap.
 
     Args:
         cfg (DictConfig): The configuration object loaded by Hydra.
@@ -39,6 +40,7 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
 
         # Get betas for all sessions for the subject
         all_betas = []
+        # TODO figure out how to read all sessions at once without memory errors
         for session in range(1, cfg.max_sessions + 1):
             session_betas = nsd.read_betas(
                 subject, session_index=session, data_format=cfg.data.data_format, data_type=cfg.data.data_type
@@ -52,6 +54,11 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
 
         # Concatenate all betas
         betas = np.concatenate(all_betas, axis=-1)
+        # Get affine and header from NSD
+        affine, header = nsd.affine_header(subject, data_format=cfg.data.data_format)
+
+        # Create mask of non-zero voxels (across all trials)
+        brain_mask = (np.abs(betas).sum(axis=-1) > 0).astype(np.int32)
 
         # Get trial info for the subject based on nsd_vg_metadata
         subject_num = subject.replace("subj0", "subject")
@@ -72,21 +79,21 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
         # Sort by trial_index
         trial_info_short = trial_info_short.sort_values(by="trial_index").reset_index(drop=True)
 
-        # Extract features (betas) and target
-        # Index the betas with the trial_index (trial_index starts at 1)
-        # Define train and test set
+        # Extract features and apply mask
         X = betas[:, :, :, trial_info_short["trial_index"].values - 1]
 
-        # Use the "shared 1000" as the validation set, and the rest as the training set
-        X_train = X[:, :, :, trial_info_short["shared1000"] == False]  # noqa: E712
-        X_test = X[:, :, :, trial_info_short["shared1000"] == True]  # noqa: E712
-        # Log the number of examples for this subject
-        logger.info(f"Number of examples for subject {subject}: {X.shape[-1]}")
-
-        # Get the correct affine and header for this subject
-        affine, header = nsd.affine_header(subject, data_format=cfg.data.data_format)
-        X_train_nifti = nib.Nifti1Image(X_train, affine=affine, header=header)
-        X_test_nifti = nib.Nifti1Image(X_test, affine=affine, header=header)
+        # Convert X and mask to nifti for searchlight
+        X = nib.Nifti1Image(X, affine=affine, header=header)
+        mask_img = nib.Nifti1Image(brain_mask, affine=affine, header=header)
+        # TODO remove later
+        if cfg.debug:
+            # Use a much smaller mask in the subject native space
+            # Read the atlas results for the given subject
+            atlas_results = nsd.read_atlas_results(subject, data_format=cfg.data.data_format, atlas="nsdgeneral")[0]
+            # Set all -1 values to 0
+            atlas_results[atlas_results == -1] = 0
+            # Create a nifti image from the atlas results
+            mask_img = nib.Nifti1Image(atlas_results, affine=affine, header=header)
 
         for target_variable in cfg.target_variables:
             # Define the target variable
@@ -95,33 +102,32 @@ def run_mvpa_decoder(cfg: DictConfig) -> None:
                 median = np.percentile(trial_info_short[target_variable], 50)
                 trial_info_short[target_variable] = (trial_info_short[target_variable] > median).astype(int)
             y = trial_info_short[target_variable].values
-            y_train = y[trial_info_short["shared1000"] == False]  # noqa: E712
-            y_test = y[trial_info_short["shared1000"] == True]  # noqa: E712
 
-            # Don't use a mask in order to do whole-brain decoding
-            decoder = Decoder(
-                estimator=cfg.decoder.estimator,
-                scoring=cfg.decoder.scoring,
-                screening_percentile=cfg.decoder.screening_percentile,
-                standardize=False,  # we've already z-scored the data per session
-                cv=None,
+            # Configure searchlight with mask
+            searchlight = SearchLight(
+                mask_img=mask_img,
+                radius=cfg.searchlight.radius,
+                estimator=cfg.searchlight.estimator,
+                n_jobs=cfg.searchlight.n_jobs,
+                scoring=cfg.searchlight.scoring,
+                verbose=1,
+                cv=cfg.searchlight.cv,  # 5-fold cross-validation instead of train/test split
             )
-            decoder.fit(X_train_nifti, y_train)
-            score = decoder.score(X_test_nifti, y_test)
+
+            # Fit searchlight
+            searchlight.fit(X, y)
+
+            # Save results
+            output_path = Path(cfg.data.output_dir) / f"{subject}_{target_variable}_searchlight_map.nii.gz"
+            nib.save(searchlight.scores_img_, output_path)
 
             logger.info(
-                f"Decoder {cfg.decoder.scoring} score for subject {subject} and "
-                f"target variable {target_variable} on the test set: {score}"
+                f"Subject {subject}, {target_variable} cv {cfg.searchlight.scoring}: "
+                f"{searchlight.scores_.mean():.3f}"
             )
 
-            # Save the coef_img_ for the weights from the training data and positive class
-            nib.save(
-                decoder.coef_img_[1],
-                os.path.join(cfg.data.output_dir, f"decoder_weights_{subject}_{target_variable}_1.nii.gz"),
-            )
-
-    logger.info("MVPA decoding complete.")
+    logger.info("MVPA searchlight decoding complete.")
 
 
 if __name__ == "__main__":
-    run_mvpa_decoder()
+    run_searchlight_decoder()

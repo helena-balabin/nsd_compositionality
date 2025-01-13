@@ -17,20 +17,23 @@ subjects:
         "subj07",
         "subj08",
     ]
-max_sessions: 10
+max_sessions: 5
 random_state: 42
 binarize_target: true
-target_variables:
-    [
+target_variables: [
         "sg_filtered_depth",
-        "n_filtered_rel",
-        "n_obj",
-        "avg_node_degree",
-        "avg_node_connectivity",
-        "avg_clustering_coefficient",
+        # "n_filtered_rel",
+        # "n_obj",
+        # "avg_node_degree",
+        # "avg_node_connectivity",
+        # "avg_clustering_coefficient",
     ]
 
-decoder:
-    estimator: "ridge_classifier"
+searchlight:
+    estimator: "svc"
     scoring: "roc_auc"
-    screening_percentile: 20
+    radius: 3 # in mm, maybe set to 6 later
+    cv: 5
+    n_jobs: -1 # use all cores
+
+debug: true
