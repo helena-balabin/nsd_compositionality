@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 @hydra.main(config_path="../../configs/visualization", config_name="mvpa_decoder_weights")
 def run_visualization(cfg: DictConfig) -> None:
     """
-    Create pycortex visualizations of decoder weights.
+    Create nilearn visualizations of decoder-based accuracy maps.
 
     Args:
         cfg (DictConfig): The configuration object loaded by Hydra.
@@ -30,9 +30,7 @@ def run_visualization(cfg: DictConfig) -> None:
     # Iterate through all target variables
     for target_variable in cfg.target_variables:
         # Load decoder weights
-        # TODO for later
-        # weight_files = list(Path(cfg.data.input_dir).glob(f"*{target_variable}*searchlight*.nii.gz"))
-        weight_files = list(Path(cfg.data.input_dir).glob(f"*{target_variable}_1.nii.gz"))
+        weight_files = list(Path(cfg.data.input_dir).glob(f"*{target_variable}*searchlight*.nii.gz"))
         logger.info(f"Found {len(weight_files)} weight files")
 
         for weight_file in weight_files:
@@ -86,6 +84,8 @@ def run_visualization(cfg: DictConfig) -> None:
                 threshold=cfg.visualization.threshold,
                 output_file=output_file,
                 cmap=cfg.visualization.colormap,
+                vmax=1.0,
+                engine=cfg.visualization.engine,
             )
 
             logger.info(f"Saved weights visualization to {output_file}")

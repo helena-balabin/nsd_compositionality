@@ -13,10 +13,11 @@ from nilearn.decoding import SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
 from scipy.stats import zscore
+from sklearn.exceptions import ConvergenceWarning
 
 logger = logging.getLogger(__name__)
 load_dotenv()
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=ConvergenceWarning)
 
 
 @hydra.main(config_path="../../configs/model", config_name="mvpa_decoder")
@@ -40,13 +41,15 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
 
         # Get betas for all sessions for the subject
         all_betas = []
-        # TODO figure out how to read all sessions at once without memory errors
         for session in range(1, cfg.max_sessions + 1):
             session_betas = nsd.read_betas(
                 subject, session_index=session, data_format=cfg.data.data_format, data_type=cfg.data.data_type
             )
             # z-scoring of session-betas along the last axis (i.e., for each voxel across trials within a session)
             session_betas = zscore(session_betas, axis=-1)
+            # In full float64 precision, each session requires 3.9GB of memory,
+            # so instead: cast to smaller data type (0.98GB)
+            session_betas = session_betas.astype(np.float16)
             # Replace NaNs with 0s (that may result from dividing by 0)
             # If there is no variance in a voxel across trials, then we're not interested in it anyways
             session_betas = np.nan_to_num(session_betas)
@@ -85,7 +88,7 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
         # Convert X and mask to nifti for searchlight
         X = nib.Nifti1Image(X, affine=affine, header=header)
         mask_img = nib.Nifti1Image(brain_mask, affine=affine, header=header)
-        # TODO remove later
+        # In the debug mode, use the nsdgeneral mask
         if cfg.debug:
             # Use a much smaller mask in the subject native space
             # Read the atlas results for the given subject

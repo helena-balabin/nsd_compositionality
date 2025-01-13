@@ -1,39 +1,39 @@
 data:
-    large_data_path: ${oc.env:LARGE_DATA_PATH}
-    nsd_directory: nsd
-    cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
-    data_format: func1pt8mm
-    data_type: betas_fithrf_GLMdenoise_RR
-    output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+  large_data_path: ${oc.env:LARGE_DATA_PATH}
+  nsd_directory: nsd
+  cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  data_format: func1pt8mm
+  data_type: betas_fithrf_GLMdenoise_RR
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
 
 subjects:
-    [
-        "subj01",
-        "subj02",
-        "subj03",
-        "subj04",
-        "subj05",
-        "subj06",
-        "subj07",
-        "subj08",
-    ]
+  [
+    "subj01",
+    "subj02",
+    "subj03",
+    "subj04",
+    "subj05",
+    "subj06",
+    "subj07",
+    "subj08",
+  ]
 max_sessions: 5
 random_state: 42
 binarize_target: true
 target_variables: [
-        "sg_filtered_depth",
-        # "n_filtered_rel",
-        # "n_obj",
-        # "avg_node_degree",
-        # "avg_node_connectivity",
-        # "avg_clustering_coefficient",
-    ]
+    "sg_filtered_depth",
+    # "n_filtered_rel",
+    # "n_obj",
+    # "avg_node_degree",
+    # "avg_node_connectivity",
+    # "avg_clustering_coefficient",
+  ]
 
 searchlight:
-    estimator: "svc"
-    scoring: "roc_auc"
-    radius: 3 # in mm, maybe set to 6 later
-    cv: 5
-    n_jobs: -1 # use all cores
+  estimator: "svc"
+  scoring: "accuracy"
+  radius: 6
+  cv: 5
+  n_jobs: -1 # use all cores
 
 debug: true

@@ -1,24 +1,25 @@
 data:
-    input_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
-    output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
-    nsd_directory: ${oc.env:LARGE_DATA_PATH}/nsd
-    fs_directory: ${oc.env:LARGE_DATA_PATH}/nsd/freesurfer
+  input_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+  nsd_directory: ${oc.env:LARGE_DATA_PATH}/nsd
+  fs_directory: ${oc.env:LARGE_DATA_PATH}/nsd/freesurfer
 
 visualization:
-    colormap: "cold_hot"
-    threshold: 0.0005
+  colormap: "cold_hot"
+  threshold: 0.5
+  engine: "plotly"
 
 mapping:
-    space_from: "func1pt8"
-    space_to: "MNI"
-    betas_type: "betas_fithrf_GLMdenoise_RR"
+  space_from: "func1pt8"
+  space_to: "MNI"
+  betas_type: "betas_fithrf_GLMdenoise_RR"
 
 target_variables:
-    [
-        "sg_filtered_depth",
-        "n_filtered_rel",
-        "n_obj",
-        "avg_node_degree",
-        "avg_node_connectivity",
-        "avg_clustering_coefficient",
-    ]
+  [
+    "sg_filtered_depth",
+    "n_filtered_rel",
+    "n_obj",
+    "avg_node_degree",
+    "avg_node_connectivity",
+    "avg_clustering_coefficient",
+  ]
