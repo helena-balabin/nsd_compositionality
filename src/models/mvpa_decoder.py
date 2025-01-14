@@ -1,6 +1,7 @@
 """MVPA searchlight decoder for NSD data."""
 
 import logging
+import os
 import warnings
 from pathlib import Path
 
@@ -13,11 +14,12 @@ from nilearn.decoding import SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
 from scipy.stats import zscore
-from sklearn.exceptions import ConvergenceWarning
+
+os.environ["PYTHONWARNINGS"] = "ignore"
 
 logger = logging.getLogger(__name__)
 load_dotenv()
-warnings.filterwarnings("ignore", category=ConvergenceWarning)
+warnings.filterwarnings("ignore", module="sklearn")
 
 
 @hydra.main(config_path="../../configs/model", config_name="mvpa_decoder")
