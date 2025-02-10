@@ -90,8 +90,8 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
         # Convert X and mask to nifti for searchlight
         X = nib.Nifti1Image(X, affine=affine, header=header)
         mask_img = nib.Nifti1Image(brain_mask, affine=affine, header=header)
-        # In the debug mode, use the nsdgeneral mask
-        if cfg.debug:
+        # Use the nsdgeneral mask
+        if cfg.nsdgeneral_mask:
             # Use a much smaller mask in the subject native space
             # Read the atlas results for the given subject
             atlas_results = nsd.read_atlas_results(subject, data_format=cfg.data.data_format, atlas="nsdgeneral")[0]

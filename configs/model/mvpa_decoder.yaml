@@ -17,7 +17,7 @@ subjects:
     "subj07",
     "subj08",
   ]
-max_sessions: 5 # TODO change
+max_sessions: 40
 random_state: 42
 binarize_target: true
 target_variables:
@@ -35,6 +35,6 @@ searchlight:
   scoring: "accuracy"
   radius: 3
   cv: 5
-  n_jobs: -1 # use all cores
+  n_jobs: -1
 
-debug: true
+nsdgeneral_mask: true
