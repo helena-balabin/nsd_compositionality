@@ -44,7 +44,9 @@ dependencies = [
   "transformers",
   "loguru",
   "plotly",
-  "kaleido"
+  "kaleido",
+  "torch",
+  "torchvision"
 ]
 
 [project.optional-dependencies]
