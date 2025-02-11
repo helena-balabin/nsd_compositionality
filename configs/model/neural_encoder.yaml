@@ -1,0 +1,33 @@
+data:
+  large_data_path: ${oc.env:LARGE_DATA_PATH}
+  nsd_directory: nsd
+  dataset_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  model_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
+  data_format: func1pt8mm
+  data_type: betas_fithrf_GLMdenoise_RR
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/neural_encoder
+  embedding_dir: ${oc.env:LARGE_DATA_PATH}/nsd/image_embeddings
+
+subjects:
+  [
+    "subj01",
+    "subj02",
+    "subj03",
+    "subj04",
+    "subj05",
+    "subj06",
+    "subj07",
+    "subj08",
+  ]
+
+model_ids:
+  [
+    "laion/CLIP-ViT-B-32-laion2B-s34B-b79K",
+    "laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",
+    "laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
+  ]
+
+# TODO change
+max_sessions: 5
+nsdgeneral_mask: true
+# TODO maybe include different alphas actually
