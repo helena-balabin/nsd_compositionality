@@ -194,19 +194,26 @@ def run_neural_encoder(cfg: DictConfig) -> None:
                 pairwise_accs += [pairwise_accuracy(Y_pred, Y_aggregated[test_idx])]
                 pearson_corrs += [pearson_correlation(Y_pred, Y_aggregated[test_idx])]
 
-            results = results.append(
-                {
-                    "subject": subject,
-                    "model_id": model_id,
-                    "pairwise_accuracy_mean": np.mean(pairwise_accs),
-                    "pairwise_accuracy_std": np.std(pairwise_accs),
-                    "pearson_correlation_mean": np.mean(pearson_corrs),
-                    "pearson_correlation_std": np.std(pearson_corrs),
-                },
+            results = pd.concat(
+                [
+                    results,
+                    pd.DataFrame(
+                        {
+                            "subject": subject,
+                            "model_id": model_id,
+                            "pairwise_accuracy_mean": np.mean(pairwise_accs),
+                            "pairwise_accuracy_std": np.std(pairwise_accs),
+                            "pearson_correlation_mean": np.mean(pearson_corrs),
+                            "pearson_correlation_std": np.std(pearson_corrs),
+                        },
+                    ),
+                ],
                 ignore_index=True,
             )
 
         logger.info(f"Subject {subject} encoding process complete.")
+
+    # Save results
 
 
 if __name__ == "__main__":
