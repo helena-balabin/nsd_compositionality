@@ -214,6 +214,7 @@ def run_neural_encoder(cfg: DictConfig) -> None:
         logger.info(f"Subject {subject} encoding process complete.")
 
     # Save results
+    results.to_csv(output_dir / "neural_encoder_results.csv", index=False)
 
 
 if __name__ == "__main__":
