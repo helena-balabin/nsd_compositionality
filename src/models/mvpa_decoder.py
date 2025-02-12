@@ -10,10 +10,11 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from nilearn.decoding import SearchLight
+from nilearn.decoding import Decoder, SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
 from scipy.stats import zscore
+from sklearn.model_selection import StratifiedKFold
 
 os.environ["PYTHONWARNINGS"] = "ignore"
 
@@ -36,6 +37,19 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
 
     # Load NSD-VG metadata
     nsd_vg_metadata = pd.read_csv(nsd_dir / "nsd_vg" / "nsd_vg_metadata.csv")
+
+    # Initialize results DataFrame
+    results = pd.DataFrame(
+        columns=[
+            "subject",
+            "target_variable",
+            f"{cfg.classifier.scoring}_mean",
+            f"{cfg.classifier.scoring}_std",
+        ]
+    )
+
+    # Initialize the CV
+    cv = StratifiedKFold(n_splits=cfg.classifier.cv, shuffle=True, random_state=cfg.random_state)
 
     # Process each subject
     for subject in cfg.subjects:
@@ -87,9 +101,21 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
         # Extract features and apply mask
         X = betas[:, :, :, trial_info_short["trial_index"].values - 1]
 
-        # Convert X and mask to nifti for searchlight
-        X = nib.Nifti1Image(X, affine=affine, header=header)
+        # Average betas by cocoId
+        unique_coco_ids = trial_info_short["cocoId"].unique()
+        X_aggregated_list = []
+        for c_id in unique_coco_ids:
+            idx = trial_info_short.index[trial_info_short["cocoId"] == c_id].tolist()
+            X_agg = X[..., idx].mean(axis=-1)
+            X_aggregated_list.append(X_agg)
+
+        X_aggregated = np.stack(X_aggregated_list, axis=-1)
+
+        # Convert averaged data and mask to nifti for searchlight and nilearn decoder
+        X = nib.Nifti1Image(X_aggregated, affine=affine, header=header)
+        # Create a whole-brain mask as a start
         mask_img = nib.Nifti1Image(brain_mask, affine=affine, header=header)
+
         # Use the nsdgeneral mask
         if cfg.nsdgeneral_mask:
             # Use a much smaller mask in the subject native space
@@ -100,6 +126,7 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             # Create a nifti image from the atlas results
             mask_img = nib.Nifti1Image(atlas_results, affine=affine, header=header)
 
+        # Process each target variable (graph measure)
         for target_variable in cfg.target_variables:
             # Define the target variable
             if cfg.binarize_target:
@@ -108,30 +135,77 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
                 trial_info_short[target_variable] = (trial_info_short[target_variable] > median).astype(int)
             y = trial_info_short[target_variable].values
 
-            # Configure searchlight with mask
-            searchlight = SearchLight(
-                mask_img=mask_img,
-                radius=cfg.searchlight.radius,
-                estimator=cfg.searchlight.estimator,
-                n_jobs=cfg.searchlight.n_jobs,
-                scoring=cfg.searchlight.scoring,
-                verbose=1,
-                cv=cfg.searchlight.cv,  # 5-fold cross-validation instead of train/test split
-            )
+            # Aggregated data for the target variable
+            y_aggregated_list = []
+            for c_id in unique_coco_ids:
+                idx = trial_info_short.index[trial_info_short["cocoId"] == c_id].tolist()
+                y_agg = y[idx].mean()  # Mean of the same value -> same value
+                y_aggregated_list.append(y_agg)
 
-            # Fit searchlight
-            searchlight.fit(X, y)
+            y = np.array(y_aggregated_list)
+
+            # Use either a searchlight or a classic decoder on all voxels
+            if cfg.use_searchlight:
+                classifier = SearchLight(
+                    mask_img=mask_img,
+                    radius=cfg.searchlight.radius,
+                    estimator=cfg.classifier.estimator,
+                    n_jobs=cfg.classifier.n_jobs,
+                    scoring=cfg.classifier.scoring,
+                    verbose=1,
+                    cv=cv,
+                )
+            else:
+                classifier = Decoder(
+                    mask=mask_img,
+                    estimator=cfg.classifier.estimator,
+                    n_jobs=cfg.classifier.n_jobs,
+                    scoring=cfg.classifier.scoring,
+                    cv=cv,
+                    verbose=1,
+                )
+
+            # Fit searchlight or decoder
+            classifier.fit(X, y)
+            # Write results to the DataFrame
+            if cfg.use_searchlight:
+                mean = np.mean(classifier.masked_scores_)
+                std = np.std(classifier.masked_scores_)
+            else:
+                mean = np.mean(classifier.cv_scores_[1])
+                std = np.std(classifier.cv_scores_[1])
+            results = pd.concat(
+                [
+                    results,
+                    pd.DataFrame(
+                        [
+                            {
+                                "subject": subject,
+                                "target_variable": target_variable,
+                                # Use the results from the positive class
+                                f"{cfg.classifier.scoring}_mean": mean,
+                                f"{cfg.classifier.scoring}_std": std,
+                            }
+                        ]
+                    ),
+                ],
+                ignore_index=True,
+            )
 
             # Save results
-            output_path = Path(cfg.data.output_dir) / f"{subject}_{target_variable}_searchlight_map.nii.gz"
-            nib.save(searchlight.scores_img_, output_path)
+            if cfg.use_searchlight:
+                searchlight_img_output_path = (
+                    Path(cfg.data.output_dir) / f"{subject}_{target_variable}_searchlight_map.nii.gz"
+                )
+                nib.save(classifier.scores_img_, searchlight_img_output_path)
 
-            logger.info(
-                f"Subject {subject}, {target_variable} cv {cfg.searchlight.scoring}: "
-                f"{searchlight.scores_.mean():.3f}"
-            )
+    if cfg.use_searchlight:
+        output_path = Path(cfg.data.output_dir) / "mvpa_searchlight_results.csv"
+    else:
+        output_path = Path(cfg.data.output_dir) / "mvpa_decoder_results.csv"
+    results.to_csv(output_path, index=False)
 
-    logger.info("MVPA searchlight decoding complete.")
+    logger.info("MVPA complete.")
 
 
 if __name__ == "__main__":

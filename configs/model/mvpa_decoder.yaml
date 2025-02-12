@@ -17,24 +17,31 @@ subjects:
     "subj07",
     "subj08",
   ]
-max_sessions: 40
+# TODO change to 40
+max_sessions: 3
 random_state: 42
 binarize_target: true
 target_variables:
   [
     "sg_filtered_depth",
     "n_filtered_rel",
+    "sg_depth",
+    "n_rel",
     "n_obj",
     "avg_node_degree",
     "avg_node_connectivity",
     "avg_clustering_coefficient",
   ]
 
-searchlight:
+use_searchlight: false
+
+classifier:
   estimator: "svc"
   scoring: "accuracy"
-  radius: 3
   cv: 5
   n_jobs: -1
+
+searchlight:
+  radius: 3
 
 nsdgeneral_mask: true
