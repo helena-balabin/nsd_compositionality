@@ -192,7 +192,7 @@ def run_neural_encoder(cfg: DictConfig) -> None:
                 X_aggregated = np.stack(X_aggregated_list, axis=0)  # (#unique_coco_ids, embedding_dim)
 
                 # 5-fold cross-validation
-                kf = KFold(n_splits=5, shuffle=True, random_state=42)
+                kf = KFold(n_splits=cfg.cv, shuffle=True, random_state=cfg.random_state)
                 pairwise_accs = []
                 pearson_corrs = []
 

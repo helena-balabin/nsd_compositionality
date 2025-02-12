@@ -81,7 +81,7 @@ def run_probing_graph_measures(cfg: DictConfig) -> None:
                     y_agg = (y_agg > median).astype(int)
 
                 # 5-fold cross-validation with LogisticRegression
-                skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+                skf = StratifiedKFold(n_splits=cfg.cv, shuffle=True, random_state=cfg.random_state)
                 accs = []
                 for train_idx, test_idx in skf.split(X_aggregated, y_agg):
                     clf = RidgeClassifierCV() if cfg.ridge_cv else RidgeClassifier()

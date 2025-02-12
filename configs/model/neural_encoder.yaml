@@ -10,6 +10,8 @@ data:
 
 by_layer: true
 ridge_cv: false
+cv: 5
+random_state: 42
 
 subjects:
   [
