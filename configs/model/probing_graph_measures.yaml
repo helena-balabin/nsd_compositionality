@@ -6,7 +6,7 @@ data:
 
 model_ids: ["laion/CLIP-ViT-B-32-laion2B-s34B-b79K"]
 
-ridge_cv: falsec
+ridge_cv: false
 cv: 5
 random_state: 42
 scoring: "f1"
