@@ -1,0 +1,3 @@
+data:
+  results_csv: ${oc.env:LARGE_DATA_PATH}/nsd/neural_encoder/neural_encoder_results.csv
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/neural_encoder
