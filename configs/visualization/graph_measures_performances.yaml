@@ -1,0 +1,4 @@
+data:
+  results_csv: ${oc.env:LARGE_DATA_PATH}/nsd/probing_graph_measures/probing_graph_measures_results.csv
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/probing_graph_measures
+scoring: "f1"
