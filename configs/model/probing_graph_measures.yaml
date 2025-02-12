@@ -1,0 +1,21 @@
+data:
+  large_data_path: ${oc.env:LARGE_DATA_PATH}
+  nsd_directory: nsd
+  embedding_dir: ${oc.env:LARGE_DATA_PATH}/nsd/image_embeddings
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/probing_graph_measures
+
+model_ids: ["laion/CLIP-ViT-B-32-laion2B-s34B-b79K"]
+
+ridge_cv: false
+scoring: "f1"
+by_layer: true
+binarize_target: true
+target_variables:
+  [
+    "sg_filtered_depth",
+    "n_filtered_rel",
+    "n_obj",
+    "avg_node_degree",
+    "avg_node_connectivity",
+    "avg_clustering_coefficient",
+  ]
