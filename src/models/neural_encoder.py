@@ -15,6 +15,8 @@ from scipy.spatial.distance import cosine
 from scipy.stats import zscore
 from sklearn.linear_model import RidgeCV
 from sklearn.model_selection import KFold
+from tqdm import tqdm
+from transformers import CLIPVisionConfig
 
 os.environ["PYTHONWARNINGS"] = "ignore"
 
@@ -94,6 +96,7 @@ def run_neural_encoder(cfg: DictConfig) -> None:
         columns=[
             "subject",
             "model_id",
+            "layer",
             "pairwise_accuracy_mean",
             "pairwise_accuracy_std",
             "pearson_correlation_mean",
@@ -162,56 +165,65 @@ def run_neural_encoder(cfg: DictConfig) -> None:
 
         # Iterate over the models that we want to test
         for model_id in cfg.model_ids:
-            # Replace the text-based inference with loading precomputed embeddings
-            # The embeddings have as many entries as trial_info_short
-            embedding_file = Path(cfg.data.embedding_dir) / f"{model_id.replace('/', '_')}_embeddings.npy"
-            X_embeddings_initial = np.load(embedding_file)
-            # Filter embeddings to match the trials included for a given subject
-            X_embeddings_mapping = {k: v for k, v in zip(nsd_vg_metadata["nsdId"], X_embeddings_initial)}
-            # Get a list with a subset of the embeddings based on those that appear
-            # in trial_info_short.nsdId, and concatenate them into a 2D array
-            X_embeddings = np.array([X_embeddings_mapping[nsd_id] for nsd_id in trial_info_short["nsdId"]])
+            # Define layers to use
+            if cfg.by_layer:
+                n_layers = CLIPVisionConfig.from_pretrained(model_id).num_hidden_layers
+                layers = [f"_layer_{i}" for i in range(n_layers)]
+            else:
+                layers = [""]
 
-            # Average embeddings for trials sharing the same cocoId
-            X_aggregated_list = []
-            for c_id in unique_coco_ids:
-                idx = trial_info_short.index[trial_info_short["cocoId"] == c_id].tolist()
-                X_agg = X_embeddings[idx].mean(axis=0)
-                X_aggregated_list.append(X_agg)
-            X_aggregated = np.stack(X_aggregated_list, axis=0)  # (#unique_coco_ids, embedding_dim)
+            for layer in tqdm(layers, desc=f"Iterating over layers for {model_id} and {subject}"):
+                # Replace the text-based inference with loading precomputed embeddings
+                # The embeddings have as many entries as trial_info_short
+                embedding_file = Path(cfg.data.embedding_dir) / f"{model_id.replace('/', '_')}{layer}_embeddings.npy"
+                X_embeddings_initial = np.load(embedding_file)
+                # Filter embeddings to match the trials included for a given subject
+                X_embeddings_mapping = {k: v for k, v in zip(nsd_vg_metadata["nsdId"], X_embeddings_initial)}
+                # Get a list with a subset of the embeddings based on those that appear
+                # in trial_info_short.nsdId, and concatenate them into a 2D array
+                X_embeddings = np.array([X_embeddings_mapping[nsd_id] for nsd_id in trial_info_short["nsdId"]])
 
-            # 5-fold cross-validation
-            kf = KFold(n_splits=5, shuffle=True, random_state=42)
-            pairwise_accs = []
-            pearson_corrs = []
+                # Average embeddings for trials sharing the same cocoId
+                X_aggregated_list = []
+                for c_id in unique_coco_ids:
+                    idx = trial_info_short.index[trial_info_short["cocoId"] == c_id].tolist()
+                    X_agg = X_embeddings[idx].mean(axis=0)
+                    X_aggregated_list.append(X_agg)
+                X_aggregated = np.stack(X_aggregated_list, axis=0)  # (#unique_coco_ids, embedding_dim)
 
-            for train_idx, test_idx in kf.split(X_aggregated):
-                encoder = RidgeCV()
-                encoder.fit(X_aggregated[train_idx], Y_aggregated[train_idx])
+                # 5-fold cross-validation
+                kf = KFold(n_splits=5, shuffle=True, random_state=42)
+                pairwise_accs = []
+                pearson_corrs = []
 
-                # Evaluate predictions with 2v2 and pearson correlation
-                Y_pred = encoder.predict(X_aggregated[test_idx])
-                pairwise_accs += [pairwise_accuracy(Y_pred, Y_aggregated[test_idx])]
-                pearson_corrs += [pearson_correlation(Y_pred, Y_aggregated[test_idx])]
+                for train_idx, test_idx in kf.split(X_aggregated):
+                    encoder = RidgeCV()
+                    encoder.fit(X_aggregated[train_idx], Y_aggregated[train_idx])
 
-            results = pd.concat(
-                [
-                    results,
-                    pd.DataFrame(
-                        [
-                            {
-                                "subject": subject,
-                                "model_id": model_id,
-                                "pairwise_accuracy_mean": np.mean(pairwise_accs),
-                                "pairwise_accuracy_std": np.std(pairwise_accs),
-                                "pearson_correlation_mean": np.mean(pearson_corrs),
-                                "pearson_correlation_std": np.std(pearson_corrs),
-                            }
-                        ],
-                    ),
-                ],
-                ignore_index=True,
-            )
+                    # Evaluate predictions with 2v2 and pearson correlation
+                    Y_pred = encoder.predict(X_aggregated[test_idx])
+                    pairwise_accs += [pairwise_accuracy(Y_pred, Y_aggregated[test_idx])]
+                    pearson_corrs += [pearson_correlation(Y_pred, Y_aggregated[test_idx])]
+
+                results = pd.concat(
+                    [
+                        results,
+                        pd.DataFrame(
+                            [
+                                {
+                                    "subject": subject,
+                                    "model_id": model_id,
+                                    "layer": layer,
+                                    "pairwise_accuracy_mean": np.mean(pairwise_accs),
+                                    "pairwise_accuracy_std": np.std(pairwise_accs),
+                                    "pearson_correlation_mean": np.mean(pearson_corrs),
+                                    "pearson_correlation_std": np.std(pearson_corrs),
+                                }
+                            ],
+                        ),
+                    ],
+                    ignore_index=True,
+                )
 
         logger.info(f"Subject {subject} encoding process complete.")
 

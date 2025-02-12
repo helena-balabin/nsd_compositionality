@@ -8,6 +8,8 @@ data:
   output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/neural_encoder
   embedding_dir: ${oc.env:LARGE_DATA_PATH}/nsd/image_embeddings
 
+by_layer: true
+
 subjects:
   [
     "subj01",
@@ -26,6 +28,5 @@ model_ids: [
     #"laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
   ]
 
-# TODO change
-max_sessions: 5
+max_sessions: 40
 nsdgeneral_mask: true
