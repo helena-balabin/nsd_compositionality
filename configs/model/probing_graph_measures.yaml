@@ -16,6 +16,8 @@ target_variables:
   [
     "sg_filtered_depth",
     "n_filtered_rel",
+    "sg_depth",
+    "n_rel",
     "n_obj",
     "avg_node_degree",
     "avg_node_connectivity",
