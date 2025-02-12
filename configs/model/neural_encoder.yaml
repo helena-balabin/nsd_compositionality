@@ -9,6 +9,7 @@ data:
   embedding_dir: ${oc.env:LARGE_DATA_PATH}/nsd/image_embeddings
 
 by_layer: true
+ridge_cv: false
 
 subjects:
   [

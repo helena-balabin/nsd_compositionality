@@ -13,7 +13,7 @@ from nsd_access import NSDAccess
 from omegaconf import DictConfig
 from scipy.spatial.distance import cosine
 from scipy.stats import zscore
-from sklearn.linear_model import RidgeCV
+from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.model_selection import KFold
 from tqdm import tqdm
 from transformers import CLIPVisionConfig
@@ -197,7 +197,7 @@ def run_neural_encoder(cfg: DictConfig) -> None:
                 pearson_corrs = []
 
                 for train_idx, test_idx in kf.split(X_aggregated):
-                    encoder = RidgeCV()
+                    encoder = RidgeCV() if cfg.ridge_cv else Ridge()
                     encoder.fit(X_aggregated[train_idx], Y_aggregated[train_idx])
 
                     # Evaluate predictions with 2v2 and pearson correlation
