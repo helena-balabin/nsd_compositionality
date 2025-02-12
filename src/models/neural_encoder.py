@@ -194,7 +194,6 @@ def run_neural_encoder(cfg: DictConfig) -> None:
                 pairwise_accs += [pairwise_accuracy(Y_pred, Y_aggregated[test_idx])]
                 pearson_corrs += [pearson_correlation(Y_pred, Y_aggregated[test_idx])]
 
-            # TODO fix
             results = pd.concat(
                 [
                     results,
