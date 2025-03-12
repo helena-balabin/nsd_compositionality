@@ -36,7 +36,7 @@ def run_probing_graph_measures(cfg: DictConfig) -> None:
 
     # Initialize results DataFrame
     results = pd.DataFrame(
-        columns=["subject", "model_id", "layer", "target_variable", f"{cfg.scoring}_mean", f"{cfg.scoring}_std"]
+        columns=["model_id", "layer", "target_variable", f"{cfg.scoring}_mean", f"{cfg.scoring}_std"]
     )
 
     # Create output directory

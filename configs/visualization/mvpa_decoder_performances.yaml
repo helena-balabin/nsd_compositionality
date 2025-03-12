@@ -1,0 +1,4 @@
+data:
+  results_csv: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder/mvpa_decoder_results.csv
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+scoring: "accuracy"

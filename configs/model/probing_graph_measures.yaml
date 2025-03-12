@@ -4,7 +4,8 @@ data:
   embedding_dir: ${oc.env:LARGE_DATA_PATH}/nsd/image_embeddings
   output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/probing_graph_measures
 
-model_ids: ["laion/CLIP-ViT-B-32-laion2B-s34B-b79K"]
+model_ids:
+  ["laion/CLIP-ViT-B-32-laion2B-s34B-b79K", "google/vit-base-patch16-224-in21k"]
 
 ridge_cv: false
 cv: 5

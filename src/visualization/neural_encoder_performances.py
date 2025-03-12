@@ -72,7 +72,7 @@ def visualize_neural_encoder_results(cfg: DictConfig) -> None:
                     mode="lines+markers",
                     name=model_id,
                     showlegend=True,
-                    line=dict(color=color_palette[i % len(color_palette)]),
+                    line=dict(color=color_palette[::-1][i % len(color_palette)]),
                     error_y=dict(type="data", array=yerr, visible=True),
                 )
             )

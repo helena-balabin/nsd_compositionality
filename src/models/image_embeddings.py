@@ -13,7 +13,7 @@ from datasets import load_dataset
 from dotenv import load_dotenv
 from omegaconf import DictConfig
 from tqdm import tqdm
-from transformers import CLIPProcessor, CLIPVisionModel
+from transformers import CLIPProcessor, CLIPVisionModel, ViTImageProcessor, ViTModel
 
 os.environ["PYTHONWARNINGS"] = "ignore"
 
@@ -57,15 +57,25 @@ def run_image_embeddings(cfg: DictConfig) -> None:
 
         logger.info(f"Loading {model_id}")
 
-        # Load CLIP model and processor
-        processor = CLIPProcessor.from_pretrained(
-            model_id,
-            cache_dir=cfg.data.model_cache_dir,
-        )
-        model = CLIPVisionModel.from_pretrained(
-            model_id,
-            cache_dir=cfg.data.model_cache_dir,
-        )
+        # Load model and processor
+        if "CLIP" in model_id:
+            processor = CLIPProcessor.from_pretrained(
+                model_id,
+                cache_dir=cfg.data.model_cache_dir,
+            )
+            model = CLIPVisionModel.from_pretrained(
+                model_id,
+                cache_dir=cfg.data.model_cache_dir,
+            )
+        else:
+            processor = ViTImageProcessor.from_pretrained(
+                model_id,
+                cache_dir=cfg.data.model_cache_dir,
+            )
+            model = ViTModel.from_pretrained(
+                model_id,
+                cache_dir=cfg.data.model_cache_dir,
+            )
         model.eval()
 
         # Initialize list to store embeddings

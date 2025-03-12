@@ -14,7 +14,7 @@ color_palettes = [
     px.colors.sequential.Blues,
     px.colors.sequential.Reds,
     px.colors.sequential.Greys,
-    px.colors.sequential.Plotly3,
+    px.colors.sequential.Oranges,
     px.colors.sequential.Viridis,
     px.colors.sequential.Cividis,
 ]
@@ -69,10 +69,10 @@ def visualize_graph_measures(cfg: DictConfig) -> None:
 
         # Loop over all possible models - one line per model
         for i, model_id in enumerate(model_data["model_id"].unique()):
-            model_data = model_data[model_data["model_id"] == model_id]
-            x = model_data["layer_idx"]
-            y = model_data[score_mean_col]
-            yerr = model_data[score_std_col]
+            model_data_per_model_id = model_data[model_data["model_id"] == model_id]
+            x = model_data_per_model_id["layer_idx"]
+            y = model_data_per_model_id[score_mean_col]
+            yerr = model_data_per_model_id[score_std_col]
 
             fig.add_trace(
                 go.Scatter(
@@ -81,7 +81,7 @@ def visualize_graph_measures(cfg: DictConfig) -> None:
                     mode="lines+markers",
                     name=model_id,
                     showlegend=True,
-                    line=dict(color=color_palette[i % len(color_palette)]),
+                    line=dict(color=color_palette[::-1][i % len(color_palette)]),
                     error_y=dict(type="data", array=yerr, visible=True),
                 )
             )

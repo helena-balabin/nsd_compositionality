@@ -13,21 +13,20 @@ ridge_cv: false
 cv: 5
 random_state: 42
 
-subjects:
-  [
+subjects: [
     "subj01",
-    "subj02",
-    "subj03",
-    "subj04",
-    "subj05",
-    "subj06",
-    "subj07",
-    "subj08",
+    #"subj02",
+    #"subj03",
+    #"subj04",
+    #"subj05",
+    #"subj06",
+    #"subj07",
+    #"subj08",
   ]
 
 model_ids: [
-    "laion/CLIP-ViT-B-32-laion2B-s34B-b79K",
-    #"laion/CLIP-ViT-bigG-14-laion2B-39B-b160k",
+    #"laion/CLIP-ViT-B-32-laion2B-s34B-b79K",
+    "google/vit-base-patch16-224-in21k",
     #"laion/CLIP-ViT-H-14-laion2B-s32B-b79K",
   ]
 

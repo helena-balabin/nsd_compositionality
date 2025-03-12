@@ -16,7 +16,7 @@ from scipy.stats import zscore
 from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.model_selection import KFold
 from tqdm import tqdm
-from transformers import CLIPVisionConfig
+from transformers import CLIPVisionConfig, ViTConfig
 
 os.environ["PYTHONWARNINGS"] = "ignore"
 
@@ -167,7 +167,10 @@ def run_neural_encoder(cfg: DictConfig) -> None:
         for model_id in cfg.model_ids:
             # Define layers to use
             if cfg.by_layer:
-                n_layers = CLIPVisionConfig.from_pretrained(model_id).num_hidden_layers
+                if "CLIP" in model_id:
+                    n_layers = CLIPVisionConfig.from_pretrained(model_id).num_hidden_layers
+                else:
+                    n_layers = ViTConfig.from_pretrained(model_id).num_hidden_layers
                 layers = [f"_layer_{i}" for i in range(n_layers)]
             else:
                 layers = [""]
