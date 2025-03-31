@@ -3,20 +3,14 @@ import os
 
 import hydra
 import pandas as pd
-import plotly.express as px
 import plotly.graph_objects as go
 from omegaconf import DictConfig
 
 logger = logging.getLogger(__name__)
 
 color_palettes = [
-    px.colors.sequential.Greens,
-    px.colors.sequential.Blues,
-    px.colors.sequential.Reds,
-    px.colors.sequential.Greys,
-    px.colors.sequential.Oranges,
-    px.colors.sequential.Viridis,
-    px.colors.sequential.Cividis,
+    ["#d1913f", "#dbad76", "#e6be8f"],
+    ["#f3724d", "#ea947b", "#f3b6a4"],
 ]
 
 
@@ -30,8 +24,9 @@ def _layer_index(layer_name: str) -> int:
 @hydra.main(config_path="../../configs/visualization", config_name="graph_measures_performances")
 def visualize_graph_measures(cfg: DictConfig) -> None:
     """
-    Read the graph measure probing results from CSV and create one plot per graph feature.
-    Only one performance measure is used (defined by cfg.scoring) across multiple graph features.
+    Read the graph measure probing results from CSV and create one plot per model.
+    Each plot contains one line per graph feature (target variable).
+    The performance measure used is defined by cfg.scoring.
     """
     csv_path = os.path.abspath(cfg.data.results_csv)
     output_dir = os.path.abspath(cfg.data.output_dir)
@@ -48,58 +43,46 @@ def visualize_graph_measures(cfg: DictConfig) -> None:
     score_mean_col = f"{cfg.scoring}_mean"
     score_std_col = f"{cfg.scoring}_std"
 
-    # Adapt the color palette to the number of models (repeating or slicing if necessary)
-    if len(df["model_id"].unique()) > len(color_palettes):
-        color_palettes_adapted = color_palettes * (len(df["model_id"].unique()) // len(color_palettes) + 1)
-    else:
-        color_palettes_adapted = color_palettes
-
-    # Loop over every unique graph feature (target variable) in the results
-    # One feature = one plot
-    for feature, color_palette in zip(
-        df["target_variable"].unique(),
-        color_palettes_adapted[: len(df["target_variable"].unique())],
-    ):
-        model_data = df[df["target_variable"] == feature]
-
-        # Define a color in case there is only one model
-        if len(model_data["model_id"].unique()) == 1:
-            color_palette = [color_palette[len(color_palette) // 2]]
+    # Loop over every unique model, creating one plot per model.
+    for model_idx, model_id in enumerate(df["model_id"].unique()):
+        model_data = df[df["model_id"] == model_id]
         fig = go.Figure()
 
-        # Loop over all possible models - one line per model
-        for i, model_id in enumerate(model_data["model_id"].unique()):
-            model_data_per_model_id = model_data[model_data["model_id"] == model_id]
-            x = model_data_per_model_id["layer_idx"]
-            y = model_data_per_model_id[score_mean_col]
-            yerr = model_data_per_model_id[score_std_col]
+        # Loop over each graph feature (target variable) for the current model.
+        for j, feature in enumerate(cfg.target_variables):
+            sub_df = model_data[model_data["target_variable"] == feature]
+            x = sub_df["layer_idx"]
+            y = sub_df[score_mean_col]
+            yerr = sub_df[score_std_col]
 
             fig.add_trace(
                 go.Scatter(
                     x=x,
                     y=y,
                     mode="lines+markers",
-                    name=model_id,
+                    name=feature.replace("sg", "").replace("_filtered", "").replace("_", " "),
                     showlegend=True,
-                    line=dict(color=color_palette[::-1][i % len(color_palette)]),
+                    line=dict(color=color_palettes[model_idx][j % len(color_palettes[model_idx])]),
                     error_y=dict(type="data", array=yerr, visible=True),
                 )
             )
 
         fig.update_layout(
-            title=f"{feature.replace('_', ' ')} across layers",
+            title=f"Graph Measures for: {model_id.split('/')[-1]}",
             title_x=0.5,
-            xaxis_title="layer index",
-            yaxis_title=feature.replace("_", " "),
+            xaxis_title="Layer Index",
+            yaxis_title=cfg.scoring.replace("_", " ").capitalize(),
             plot_bgcolor="white",
-            legend_title="model ID",
+            legend_title="Graph Feature",
             legend=dict(orientation="h", y=1.1),
+            font=dict(size=14),  # Increased font size
+            yaxis=dict(tickfont=dict(size=18)),
+            xaxis=dict(tickfont=dict(size=18)),
         )
 
-        output_path = os.path.join(output_dir, f"{feature}.png")
+        output_path = os.path.join(output_dir, f"{model_id.replace('/', '-')}_graph_measures.png")
         fig.write_image(output_path)
-
-        logger.info(f"Saved plot for '{feature}' at {output_path}")
+        logger.info(f"Saved plot for model '{model_id}' at {output_path}")
 
 
 if __name__ == "__main__":

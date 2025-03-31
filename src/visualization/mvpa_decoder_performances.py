@@ -21,6 +21,12 @@ def create_barplot(cfg: DictConfig) -> None:
 
     logger.info(f"Reading results from {csv_path}")
     df = pd.read_csv(csv_path)
+    # Filter by target_variables specified in cfg.target_variables
+    df = df[df["target_variable"].isin(cfg.target_variables)]
+    # Format the target_variable column
+    df["target_variable"] = df["target_variable"].str.replace("sg", "")
+    df["target_variable"] = df["target_variable"].str.replace("_filtered", "")
+    df["target_variable"] = df["target_variable"].str.replace("_", " ")
 
     score_mean_col = f"{cfg.scoring}_mean"
     score_std_col = f"{cfg.scoring}_std"
@@ -36,8 +42,15 @@ def create_barplot(cfg: DictConfig) -> None:
         error_y=score_std_col,
         title="MVPA Decoder Performances (Averaged Across Subjects)",
         labels={"target_variable": "Target Variable", score_mean_col: cfg.scoring},
+        color_discrete_sequence=["#cc7464"] * len(grouped),
     )
-    fig.update_layout(plot_bgcolor="white")
+    fig.update_traces(width=0.4)
+    fig.update_layout(
+        plot_bgcolor="white",
+        yaxis=dict(tickfont=dict(size=18)),
+        xaxis=dict(tickfont=dict(size=18)),
+        title_x=0.5,
+    )
 
     output_path = os.path.join(output_dir, "mvpa_decoder_barplot.png")
     fig.write_image(output_path)
