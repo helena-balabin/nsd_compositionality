@@ -135,7 +135,7 @@ class GraphCLIPModel(CLIPModel):
             # Compute contrastive loss for the specified pairs
             loss_image_text = clip_loss(logits_image_text)
             loss_graph_pair = clip_loss(logits_graph_pair)
-            loss = (loss_image_text + loss_graph_pair) / 2
+            loss = (loss_image_text + loss_graph_pair) / 2.0
 
         if not return_dict:
             output = (
