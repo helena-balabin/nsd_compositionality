@@ -110,7 +110,8 @@ class GraphCLIPModel(CLIPModel):
             output_attentions=output_attentions,
             output_hidden_states=output_hidden_states,
         )
-        graph_embeds = graph_outputs.last_hidden_state.mean(dim=1)  # Mean pooling of the last hidden state
+        # Use the special graph token for graph representation
+        graph_embeds = graph_outputs.last_hidden_state[:, 0, :]
         graph_embeds = self.graph_projection(graph_embeds)
 
         # Normalize the projected features
