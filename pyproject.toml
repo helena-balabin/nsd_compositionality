@@ -3,9 +3,10 @@ requires = ["setuptools>=45", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "nsd-compositionality"
+name = "nsd_compositionality"
 description = "NSD Compositionality"
 readme = "README.md"
+version = "0.0.1"
 requires-python = ">=3.12"
 license = {file = "LICENSE"}
 keywords = ["functional magnetic resonance imaging"]

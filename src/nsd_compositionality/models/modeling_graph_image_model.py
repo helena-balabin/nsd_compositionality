@@ -1,5 +1,6 @@
 """Contrastive Learning-Based Graph, Image, and Text Model."""
 
+from dataclasses import dataclass
 from typing import Optional, Tuple, Union
 
 import torch
@@ -9,6 +10,7 @@ from transformers.modeling_outputs import BaseModelOutputWithNoAttention, BaseMo
 from transformers.models.clip.modeling_clip import clip_loss
 
 
+@dataclass
 class GraphCLIPOutput(ModelOutput):
     """
     Custom output class for GraphCLIPModel.
@@ -26,14 +28,14 @@ class GraphCLIPOutput(ModelOutput):
     """
 
     loss: Optional[torch.FloatTensor] = None
-    logits_image_text: torch.FloatTensor
-    logits_graph_pair: torch.FloatTensor
-    image_embeds: torch.FloatTensor
-    graph_embeds: torch.FloatTensor
-    text_embeds: torch.FloatTensor
-    vision_model_output: BaseModelOutputWithPooling
-    text_model_output: BaseModelOutputWithPooling
-    graph_model_output: BaseModelOutputWithNoAttention
+    logits_image_text: torch.FloatTensor = None
+    logits_graph_pair: torch.FloatTensor = None
+    image_embeds: torch.FloatTensor = None
+    graph_embeds: torch.FloatTensor = None
+    text_embeds: torch.FloatTensor = None
+    vision_model_output: BaseModelOutputWithPooling = None
+    text_model_output: BaseModelOutputWithPooling = None
+    graph_model_output: BaseModelOutputWithNoAttention = None
 
 
 class GraphCLIPModel(CLIPModel):
@@ -69,7 +71,7 @@ class GraphCLIPModel(CLIPModel):
             input_ids (torch.LongTensor): Tokenized text input IDs.
             pixel_values (torch.FloatTensor): Batch of images.
             graph_input (dict): Dictionary of inputs for the Graphormer encoder.
-            attention_mask (torch.LongTensor, optional): Attention mask for text and graph encoders.
+            attention_mask (torch.LongTensor, optional): Attention mask for the text encoder.
             position_ids (torch.LongTensor, optional): Position IDs for text encoder.
             return_loss (bool, optional): Whether to compute the contrastive loss.
             output_attentions (bool, optional): Whether to output attentions.
@@ -106,9 +108,6 @@ class GraphCLIPModel(CLIPModel):
         # Process graph input through Graphormer
         graph_outputs = self.graph_model(
             **graph_input,
-            attention_mask=attention_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
         )
         # Use the special graph token for graph representation
         graph_embeds = graph_outputs.last_hidden_state[:, 0, :]

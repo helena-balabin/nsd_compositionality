@@ -1,5 +1,5 @@
 """Train a model on a dataset."""
 
 
-def train():
+def train(config):
     pass
