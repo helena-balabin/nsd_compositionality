@@ -23,7 +23,7 @@ load_dotenv()
 warnings.filterwarnings("ignore", module="sklearn")
 
 
-@hydra.main(config_path="../../configs/model", config_name="mvpa_decoder")
+@hydra.main(config_path="../../../configs/model", config_name="mvpa_decoder")
 def run_searchlight_decoder(cfg: DictConfig) -> None:
     """
     Run MVPA searchlight decoder on NSD data to predict a target variable from the NSD-COCO overlap.

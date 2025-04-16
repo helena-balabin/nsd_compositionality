@@ -24,7 +24,7 @@ scoring_functions = {
 }
 
 
-@hydra.main(config_path="../../configs/model", config_name="probing_graph_measures")
+@hydra.main(config_path="../../../configs/model", config_name="probing_graph_measures")
 def run_probing_graph_measures(cfg: DictConfig) -> None:
     # Load the metadata
     nsd_dir = Path(cfg.data.large_data_path) / cfg.data.nsd_directory

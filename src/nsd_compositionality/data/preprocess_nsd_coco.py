@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
-@hydra.main(config_path="../../configs/data", config_name="data")
+@hydra.main(config_path="../../../configs/data", config_name="data")
 def preprocess_nsd_coco(cfg: DictConfig) -> None:
     """
     Preprocess the NSD-COCO dataset.

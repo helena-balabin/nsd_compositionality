@@ -18,7 +18,7 @@ def _layer_index(layer_name: str) -> int:
     return -1
 
 
-@hydra.main(config_path="../../configs/visualization", config_name="neural_encoder_performances")
+@hydra.main(config_path="../../../configs/visualization", config_name="neural_encoder_performances")
 def visualize_neural_encoder_results(cfg: DictConfig) -> None:
     """
     Read the neural encoder results from CSV, average across subjects, and plot:

@@ -21,7 +21,7 @@ def _layer_index(layer_name: str) -> int:
     return -1
 
 
-@hydra.main(config_path="../../configs/visualization", config_name="graph_measures_performances")
+@hydra.main(config_path="../../../configs/visualization", config_name="graph_measures_performances")
 def visualize_graph_measures(cfg: DictConfig) -> None:
     """
     Read the graph measure probing results from CSV and create one plot per model.

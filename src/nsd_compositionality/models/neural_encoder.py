@@ -72,7 +72,7 @@ def pearson_correlation(Y_pred: np.ndarray, Y_true: np.ndarray) -> float:
     return float(np.nanmean(correlations))
 
 
-@hydra.main(config_path="../../configs/model", config_name="neural_encoder")
+@hydra.main(config_path="../../../configs/model", config_name="neural_encoder")
 def run_neural_encoder(cfg: DictConfig) -> None:
     """
     Run a neural encoding analysis on NSD data using a Hugging Face model

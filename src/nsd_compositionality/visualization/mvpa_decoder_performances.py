@@ -9,7 +9,7 @@ from omegaconf import DictConfig
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="../../configs/visualization", config_name="mvpa_decoder_performances")
+@hydra.main(config_path="../../../configs/visualization", config_name="mvpa_decoder_performances")
 def create_barplot(cfg: DictConfig) -> None:
     """
     Read the MVPA decoder results from CSV (saved by mvpa_decoder) and create a bar plot

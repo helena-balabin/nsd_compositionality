@@ -22,7 +22,7 @@ load_dotenv()
 warnings.filterwarnings("ignore")
 
 
-@hydra.main(config_path="../../configs/model", config_name="image_embeddings")
+@hydra.main(config_path="../../../configs/model", config_name="image_embeddings")
 def run_image_embeddings(cfg: DictConfig) -> None:
     """
     Pre-compute image embeddings for CLIP-like models. The embeddings serve as

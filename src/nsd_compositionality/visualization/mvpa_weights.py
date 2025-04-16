@@ -15,7 +15,7 @@ from omegaconf import DictConfig
 logger = logging.getLogger(__name__)
 
 
-@hydra.main(config_path="../../configs/visualization", config_name="mvpa_decoder_weights")
+@hydra.main(config_path="../../../configs/visualization", config_name="mvpa_decoder_weights")
 def run_visualization(cfg: DictConfig) -> None:
     """
     Create nilearn visualizations of decoder-based accuracy maps.
