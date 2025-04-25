@@ -1,5 +1,9 @@
 data:
-    large_data_path: ${oc.env:LARGE_DATA_PATH}
-    nsd_directory: nsd
-    vg_metadata_hf_identifier: "helena-balabin/vg_coco_overlap"
-    cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  large_data_path: ${oc.env:LARGE_DATA_PATH}
+  nsd_directory: nsd
+  vg_directory: vg
+  vg_metadata_dir: data_release
+  vg_metadata_hf_identifier: "helena-balabin/vg_coco_overlap"
+  cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+model:
+  spacy_model: "en_core_web_trf"

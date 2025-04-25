@@ -47,7 +47,11 @@ dependencies = [
   "plotly",
   "kaleido",
   "torch",
-  "torchvision"
+  "torchvision",
+  "nltk",
+  "unidecode",
+  "amrlib",
+  "spacy"
 ]
 
 [project.optional-dependencies]

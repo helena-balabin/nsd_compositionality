@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Mapping
 
 import numpy as np
 import torch
-from transformers.utils.import_utils import requires_backends
 
 UNREACHABLE_NODE_DISTANCE = 510
 
@@ -143,8 +142,6 @@ def preprocess_item(
     :return: The preprocessed item.
     :rtype: dict
     """
-    requires_backends(preprocess_item, ["cython"])
-
     if keep_features and "edge_attr" in item.keys():  # edge_attr
         edge_attr = np.asarray(item["edge_attr"], dtype=np.int64)
     else:
@@ -170,7 +167,10 @@ def preprocess_item(
     adj[edge_index[0], edge_index[1]] = True
 
     shortest_path_result, path = floyd_warshall(adj)
-    max_dist = np.amax(shortest_path_result)
+    if shortest_path_result.size > 0:
+        max_dist = np.amax(shortest_path_result)
+    else:
+        max_dist = UNREACHABLE_NODE_DISTANCE
 
     input_edges = gen_edge_input(max_dist, path, attn_edge_type)
     attn_bias = np.zeros([num_nodes + 1, num_nodes + 1], dtype=np.single)  # with graph token
@@ -183,8 +183,6 @@ def preprocess_item(
     item["in_degree"] = np.sum(adj, axis=1).reshape(-1) + 1  # Shift all indices by one for padding
     item["out_degree"] = item["in_degree"]  # For undirected graph
     item["input_edges"] = input_edges + 1  # Shift all indices by one for padding
-    if "labels" not in item:
-        item["labels"] = item["y"]
 
     return item
 
