@@ -299,7 +299,7 @@ def derive_text_graphs(
     # Set the AMR extension
     amrlib.setup_spacy_extension()
     # Disable unnecessary components
-    nlp = spacy.load(spacy_model, disable=["tok2vec", "attribute_ruler", "lemmatizer"])
+    nlp = spacy.load(spacy_model, disable=["tok2vec", "attribute_ruler", "lemmatizer", "ner", "tagger"])
     nlp.add_pipe("force_single_sentence", before="parser")
 
     amr_graphs = {}
@@ -325,7 +325,12 @@ def derive_text_graphs(
         # AMR Graph
         amr_penman = doc._.to_amr()[0]
         # Convert the penman graph to a NetworkX DiGraph
-        penman_graph = penman.decode(amr_penman)
+        try:
+            penman_graph = penman.decode(amr_penman)
+        except penman.DecodeError as err:
+            logger.warning(f"Failed to decode AMR graph for text ID {tid}")
+            amr_graphs[tid] = {"edge_index": [[], []], "num_nodes": 0}
+            continue
         # Convert to a nx graph, first initialize the nx graph
         nx_graph = nx.DiGraph()
         # Add edges
