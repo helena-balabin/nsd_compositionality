@@ -363,7 +363,7 @@ def derive_text_graphs(
         # Convert the penman graph to a NetworkX DiGraph
         try:
             penman_graph = penman.decode(amr_penman)
-        except penman.DecodeError as err:
+        except Exception as err:  # noqa
             logger.warning(f"Failed to decode AMR graph for text ID {tid}")
             amr_graphs[tid] = {"edge_index": [[], []], "num_nodes": 0}
             continue
