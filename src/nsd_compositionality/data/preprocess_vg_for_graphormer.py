@@ -11,7 +11,7 @@ import nltk
 import pandas as pd
 import penman
 import spacy
-from datasets import load_dataset
+from datasets import DatasetDict, load_dataset
 from dotenv import load_dotenv
 from nltk.corpus import wordnet as wn
 from omegaconf import DictConfig
@@ -21,6 +21,60 @@ from tqdm import tqdm
 logging.getLogger("penman").setLevel(logging.ERROR)
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+
+def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name: str) -> Dict[str, Any]:
+    """
+    Preprocess a split of the VG metadata.
+
+    :param vg_metadata: The VG metadata to preprocess.
+    :param nsd_coco_ids: The set of NSD COCO IDs to filter against.
+    :param vg_metadata_dir: The directory containing VG metadata files.
+    :param cfg: The Hydra configuration object.
+    :param split_name: The name of the split (e.g., "train" or "test").
+    :return: The preprocessed VG metadata.
+    """
+    if split_name == "train":
+        vg_metadata = vg_metadata.filter(
+            lambda x: x["cocoid"] not in nsd_coco_ids,
+            num_proc=4,
+        )
+    elif split_name == "test":
+        vg_metadata = vg_metadata.filter(
+            lambda x: x["cocoid"] in nsd_coco_ids,
+            num_proc=4,
+        )
+    logger.info(f"Filtered VG metadata for {split_name} split, total entries: {len(vg_metadata)}")
+
+    # Add image graph properties using the derive_graphs function
+    vg_objects_file = vg_metadata_dir / "objects.json"
+    vg_relationships_file = vg_metadata_dir / "relationships.json"
+    graphs, filtered_graphs = derive_image_graphs(
+        vg_objects_file=vg_objects_file,
+        vg_relationships_file=vg_relationships_file,
+        image_ids=vg_metadata["vg_image_id"],
+    )
+    graphs = [graphs[img_id] for img_id in vg_metadata["vg_image_id"]]  # type: ignore
+    filtered_graphs = [filtered_graphs[img_id] for img_id in vg_metadata["vg_image_id"]]  # type: ignore
+
+    # Add text graph properties using the derive_text_graphs function
+    texts = vg_metadata["sentences_raw"]
+    text_ids = vg_metadata["sentids"]
+    amr_graphs, dependency_graphs = derive_text_graphs(
+        texts=texts,
+        text_ids=text_ids,
+        spacy_model=cfg.model.spacy_model,
+    )
+    amr_graphs = [amr_graphs[tid] for tid in text_ids]  # type: ignore
+    dependency_graphs = [dependency_graphs[tid] for tid in text_ids]  # type: ignore
+
+    # Add everything as features to the metadata
+    vg_metadata = vg_metadata.add_column(name="amr_graphs", column=amr_graphs)
+    vg_metadata = vg_metadata.add_column(name="dependency_graphs", column=dependency_graphs)
+    vg_metadata = vg_metadata.add_column(name="image_graphs", column=graphs)
+    vg_metadata = vg_metadata.add_column(name="filtered_image_graphs", column=filtered_graphs)
+
+    return vg_metadata
 
 
 @hydra.main(config_path="../../../configs/data", config_name="data")
@@ -48,45 +102,27 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         split="train",
     )
 
-    # Filter VG metadata to exclude entries in NSD
-    vg_metadata = vg_metadata.filter(
-        lambda x: x["cocoid"] not in nsd_coco_ids,
-        num_proc=4,
+    # Preprocess train split
+    train_metadata = preprocess_split(
+        vg_metadata=vg_metadata,
+        nsd_coco_ids=nsd_coco_ids,
+        vg_metadata_dir=vg_metadata_dir,
+        cfg=cfg,
+        split_name="train",
     )
-    logger.info(f"Filtered VG metadata to exclude NSD entries, total entries: {len(vg_metadata)}")
 
-    # Add image graph properties using the derive_graphs function
-    vg_objects_file = vg_metadata_dir / "objects.json"
-    vg_relationships_file = vg_metadata_dir / "relationships.json"
-    graphs, filtered_graphs = derive_image_graphs(
-        vg_objects_file=vg_objects_file,
-        vg_relationships_file=vg_relationships_file,
-        image_ids=vg_metadata["vg_image_id"],
+    # Preprocess test split
+    test_metadata = preprocess_split(
+        vg_metadata=vg_metadata,
+        nsd_coco_ids=nsd_coco_ids,
+        vg_metadata_dir=vg_metadata_dir,
+        cfg=cfg,
+        split_name="test",
     )
-    # Add them as features to the metadata
-    # Make a list from the graphs dict in the same order as vg_metadata
-    graphs = [graphs[img_id] for img_id in vg_metadata["vg_image_id"]]  # type: ignore
-    filtered_graphs = [filtered_graphs[img_id] for img_id in vg_metadata["vg_image_id"]]  # type: ignore
 
-    # Add text graph properties using the derive_text_graphs function
-    texts = vg_metadata["sentences_raw"]
-    text_ids = vg_metadata["sentids"]
-    amr_graphs, dependency_graphs = derive_text_graphs(
-        texts=texts,
-        text_ids=text_ids,
-        spacy_model=cfg.model.spacy_model,
-    )
-    amr_graphs = [amr_graphs[tid] for tid in text_ids]  # type: ignore
-    dependency_graphs = [dependency_graphs[tid] for tid in text_ids]  # type: ignore
-
-    # Add everything as features to the metadata
-    vg_metadata = vg_metadata.add_column(name="amr_graphs", column=amr_graphs)
-    vg_metadata = vg_metadata.add_column(name="dependency_graphs", column=dependency_graphs)
-    vg_metadata = vg_metadata.add_column(name="image_graphs", column=graphs)
-    vg_metadata = vg_metadata.add_column(name="filtered_image_graphs", column=filtered_graphs)
-
-    # Upload the metadata to the Hugging Face Hub with a new identifier
-    vg_metadata.push_to_hub(
+    # Push both splits to the Hugging Face Hub
+    dataset_dict = DatasetDict({"train": train_metadata, "test": test_metadata})
+    dataset_dict.push_to_hub(
         repo_id=cfg.data.vg_metadata_hf_identifier + "_for_graphormer",
     )
 
