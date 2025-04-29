@@ -51,7 +51,8 @@ dependencies = [
   "nltk",
   "unidecode",
   "amrlib",
-  "spacy"
+  "spacy",
+  "mlflow"
 ]
 
 [project.optional-dependencies]

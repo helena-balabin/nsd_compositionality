@@ -5,7 +5,7 @@ from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-from transformers import CLIPConfig, CLIPModel, GraphormerModel
+from transformers import CLIPConfig, CLIPModel, CLIPTextModel, CLIPVisionModel, GraphormerModel
 from transformers.modeling_outputs import BaseModelOutputWithNoAttention, BaseModelOutputWithPooling, ModelOutput
 from transformers.models.clip.modeling_clip import clip_loss
 
@@ -40,14 +40,24 @@ class GraphCLIPOutput(ModelOutput):
 
 class GraphCLIPModel(CLIPModel):
     def __init__(self, config: CLIPConfig):
+        # Specify configs
         super().__init__(config)
         graph_config = config.graph_config
+
+        # If "pretrained_model_name_or_path" is in config, load the pretrained vision and text models
+        if config.pretrained_model_name_or_path:
+            self.vision_model = CLIPVisionModel.from_pretrained(
+                config.pretrained_model_name_or_path,
+            ).vision_model
+            self.text_model = CLIPTextModel.from_pretrained(
+                config.pretrained_model_name_or_path,
+            )
 
         # Initialize Graphormer model
         self.graph_model = GraphormerModel._from_config(graph_config)
 
         # Projection layer for graph embeddings
-        self.graph_projection = nn.Linear(graph_config.hidden_size, self.projection_dim, bias=False)
+        self.graph_projection = nn.Linear(graph_config.hidden_size, config.projection_dim, bias=False)
 
         # Determine the graph pair type (either "text" or "image")
         self.graph_pair_type = config.graph_pair_type  # Should be "text" or "image"

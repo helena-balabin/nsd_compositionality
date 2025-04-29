@@ -12,7 +12,6 @@ def test_graph_clip_model_forward():
     # Create a mock configuration
     graphormer_config = GraphormerConfig()
     config = CLIPConfig(
-        projection_dim=512,
         graph_config=graphormer_config,
         graph_pair_type="text",
     )

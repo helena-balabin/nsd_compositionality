@@ -1,0 +1,25 @@
+device: "cuda"
+output_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
+
+data:
+  hf_dataset_identifier: "helena-balabin/vg_coco_overlap_for_graphormer"
+  split: "train"
+  seed: 42
+  validation_split: 0.1
+
+model:
+  pretrained_model_name_or_path: "openai/clip-vit-base-patch32"
+  huggingface_hub_model_id": "helena-balabin/clip-graphormer-image"
+
+training:
+  batch_size: 16
+  learning_rate: 5e-5
+  epochs: 10
+  weight_decay: 0.01
+  logging_steps: 50
+  eval_steps: 100
+  save_total_limit: 3
+
+mlflow:
+  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI}
+  experiment_name: "GraphCLIP + Image Graphs Training"
