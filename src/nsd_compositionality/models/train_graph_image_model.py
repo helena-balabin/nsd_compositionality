@@ -55,6 +55,13 @@ def train_graph_image_model(cfg: DictConfig):
             cfg.data.hf_dataset_identifier,
             split=cfg.data.split,
         )
+        # Get rid of duplicates using the "filepath" column we deal with images
+        if cfg.model.model_type == "image":
+            unique_entries = dataset.unique("filepath")
+            dataset = dataset.filter(lambda x: x["filepath"] in unique_entries)
+        # Log the number of samples in the dataset
+        mlflow.log_param("len_dataset", len(dataset))
+
         # Only keep the graph type column specified by model_type_graph_base in the config, remove all other
         # columns that contain "_graphs"
         target_graph_column = cfg.model.model_type_graph_base + "_" if cfg.model.model_type_graph_base else ""
@@ -70,7 +77,7 @@ def train_graph_image_model(cfg: DictConfig):
             lambda x: x["graph_input"]["num_nodes"] > 0 or x["graph_input"]["edge_index"] != [[], []]
         )
         # Log the number of samples in the dataset after filtering
-        mlflow.log_metric("empty_graphs_ratio", 1 - len(dataset) / len_dataset_pre)
+        mlflow.log_param("empty_graphs_ratio", 1 - len(dataset) / len_dataset_pre)
         # Make sure the dataset is shuffled
         dataset = dataset.shuffle(seed=cfg.data.seed)
         if cfg.data.n_samples > 0:
