@@ -2,7 +2,7 @@ import os
 
 import hydra
 import mlflow
-from datasets import load_dataset
+from datasets import Dataset, load_dataset
 from omegaconf import DictConfig
 from PIL import Image
 from transformers import CLIPConfig, CLIPProcessor, GraphormerConfig, Trainer, TrainingArguments
@@ -57,8 +57,12 @@ def train_graph_image_model(cfg: DictConfig):
         )
         # Get rid of duplicates using the "filepath" column we deal with images
         if cfg.model.model_type == "image":
-            unique_entries = dataset.unique("filepath")
-            dataset = dataset.filter(lambda x: x["filepath"] in unique_entries)
+            df = dataset.to_pandas()
+            # Drop exact duplicate filepaths, keeping the first occurrence
+            df_dedup = df.drop_duplicates(subset=["filepath"], keep="first")
+            # Re-create a Dataset (will re-generate a new index column by default)
+            dataset = Dataset.from_pandas(df_dedup)
+
         # Log the number of samples in the dataset
         mlflow.log_param("len_dataset", len(dataset))
 
