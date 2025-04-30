@@ -11,17 +11,18 @@ data:
   num_proc: 8
   batch_size: 256
   validation_split: 0.1
+  n_samples: 500 # -1 for all
 
 model:
   pretrained_model_name_or_path: "openai/clip-vit-base-patch32"
-  huggingface_hub_model_id": "helena-balabin/clip-graphormer"
+  huggingface_hub_model_id: "helena-balabin/clip-graphormer"
   model_type: "image"
   model_type_graph_base: "filtered"
 
 training:
-  batch_size: 16
+  batch_size: 32
   learning_rate: 5e-5
-  epochs: 10
+  epochs: 1 # 1 epoch for testing, 10 for full training
   weight_decay: 0.01
   logging_steps: 50
   eval_steps: 100

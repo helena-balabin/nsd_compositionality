@@ -64,12 +64,17 @@ def train_graph_image_model(cfg: DictConfig):
         )
         # Rename the target graph column to "input_graphs"
         dataset = dataset.rename_column(target_graph_column, "graph_input")
+        len_dataset_pre = len(dataset)
         # Filter out data with empty graphs: num_nodes == 0 or edge_index == [[], []]
         dataset = dataset.filter(
             lambda x: x["graph_input"]["num_nodes"] > 0 or x["graph_input"]["edge_index"] != [[], []]
         )
+        # Log the number of samples in the dataset after filtering
+        mlflow.log_metric("empty_graphs_ratio", 1 - len(dataset) / len_dataset_pre)
         # Make sure the dataset is shuffled
-        dataset = dataset.shuffle(seed=cfg.data.seed).select(range(500))  # TODO remove later
+        dataset = dataset.shuffle(seed=cfg.data.seed)
+        if cfg.data.n_samples > 0:
+            dataset = dataset.select(range(cfg.data.n_samples))
 
         # Preprocess the dataset
         dataset = preprocess_dataset(dataset, cfg)
@@ -97,7 +102,7 @@ def train_graph_image_model(cfg: DictConfig):
         # Define training arguments
         training_args = TrainingArguments(
             output_dir=cfg.output_dir,
-            evaluation_strategy="steps",
+            eval_strategy="steps",
             eval_steps=cfg.training.eval_steps,
             save_strategy="steps",
             learning_rate=cfg.training.learning_rate,
@@ -123,12 +128,14 @@ def train_graph_image_model(cfg: DictConfig):
         # Train the model
         trainer.train()
 
-        # Save the trained model
+        # Define the model save path
         model_save_path = os.path.join(cfg.output_dir, "graph_clip_model" + "_" + target_graph_column)
-        trainer.save_model(model_save_path)
 
         # Push the model to the huggingface hub
         model.push_to_hub(cfg.model.huggingface_hub_model_id + "_" + target_graph_column)
+
+        # And save it locally
+        trainer.save_model(model_save_path)
 
 
 if __name__ == "__main__":
