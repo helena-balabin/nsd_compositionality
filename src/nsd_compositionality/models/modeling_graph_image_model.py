@@ -69,7 +69,7 @@ class GraphCLIPModel(CLIPModel):
         graph_input: Optional[dict] = None,
         attention_mask: Optional[torch.Tensor] = None,
         position_ids: Optional[torch.LongTensor] = None,
-        return_loss: Optional[bool] = None,
+        return_loss: Optional[bool] = True,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
@@ -83,7 +83,7 @@ class GraphCLIPModel(CLIPModel):
             graph_input (dict): Dictionary of inputs for the Graphormer encoder.
             attention_mask (torch.LongTensor, optional): Attention mask for the text encoder.
             position_ids (torch.LongTensor, optional): Position IDs for text encoder.
-            return_loss (bool, optional): Whether to compute the contrastive loss.
+            return_loss (bool, optional): Whether to compute the contrastive loss, default is True.
             output_attentions (bool, optional): Whether to output attentions.
             output_hidden_states (bool, optional): Whether to output hidden states.
             return_dict (bool, optional): Whether to return a ModelOutput object.

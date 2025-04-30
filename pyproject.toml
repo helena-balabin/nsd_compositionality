@@ -52,7 +52,8 @@ dependencies = [
   "unidecode",
   "amrlib",
   "spacy",
-  "mlflow"
+  "mlflow",
+  "torchvision"
 ]
 
 [project.optional-dependencies]

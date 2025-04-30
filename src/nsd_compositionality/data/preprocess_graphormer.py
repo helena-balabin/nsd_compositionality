@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Mapping
 
 import numpy as np
 import torch
+from transformers import default_data_collator
 
 UNREACHABLE_NODE_DISTANCE = 510
 
@@ -187,25 +188,31 @@ def preprocess_item(
     return item
 
 
-class GraphormerDataCollator:
+class GraphCLIPDataCollator:
     def __init__(self, spatial_pos_max=20, on_the_fly_processing=False):
         self.spatial_pos_max = spatial_pos_max
         self.on_the_fly_processing = on_the_fly_processing
 
     def __call__(self, features: List[dict]) -> Dict[str, Any]:
-        if self.on_the_fly_processing:
-            features = [preprocess_item(i) for i in features]
+        # Separate graph_input from the rest
+        graph_features = [f["graph_input"] for f in features]
+        non_graph_features = [{k: v for k, v in f.items() if k != "graph_input"} for f in features]
 
-        if not isinstance(features[0], Mapping):
-            features = [vars(f) for f in features]
+        # Process graph_input
+        if self.on_the_fly_processing:
+            graph_features = [preprocess_item(i) for i in graph_features]
+
+        if not isinstance(graph_features[0], Mapping):
+            graph_features = [vars(f) for f in graph_features]
         batch = {}
 
-        max_node_num = max(len(i["input_nodes"]) for i in features)
-        node_feat_size = len(features[0]["input_nodes"][0])
-        edge_feat_size = len(features[0]["attn_edge_type"][0][0])
-        max_dist = max(len(i["input_edges"][0][0]) for i in features)
-        edge_input_size = len(features[0]["input_edges"][0][0][0])
-        batch_size = len(features)
+        # Get some characteristics of the batch
+        max_node_num = max(len(i["input_nodes"]) for i in graph_features)
+        node_feat_size = len(graph_features[0]["input_nodes"][0])
+        edge_feat_size = len(graph_features[0]["attn_edge_type"][0][0])
+        max_dist = max(len(i["input_edges"][0][0]) for i in graph_features if len(i["input_edges"]) > 0)
+        edge_input_size = len(graph_features[0]["input_edges"][0][0][0])
+        batch_size = len(graph_features)
 
         batch["attn_bias"] = torch.zeros(batch_size, max_node_num + 1, max_node_num + 1, dtype=torch.float)
         batch["attn_edge_type"] = torch.zeros(batch_size, max_node_num, max_node_num, edge_feat_size, dtype=torch.long)
@@ -216,7 +223,7 @@ class GraphormerDataCollator:
             batch_size, max_node_num, max_node_num, max_dist, edge_input_size, dtype=torch.long
         )
 
-        for ix, f in enumerate(features):
+        for ix, f in enumerate(graph_features):
             for k in ["attn_bias", "attn_edge_type", "spatial_pos", "in_degree", "input_nodes", "input_edges"]:
                 f[k] = torch.tensor(f[k])
 
@@ -236,13 +243,10 @@ class GraphormerDataCollator:
 
         batch["out_degree"] = batch["in_degree"]
 
-        sample = features[0]["labels"]
-        if len(sample) == 1:  # One task
-            if isinstance(sample[0], float):  # Regression
-                batch["labels"] = torch.from_numpy(np.concatenate([i["labels"] for i in features]))
-            else:  # Binary classification
-                batch["labels"] = torch.from_numpy(np.concatenate([i["labels"] for i in features]))
-        else:  # Multi-task classification, left to float to keep the NaNs
-            batch["labels"] = torch.from_numpy(np.stack([i["labels"] for i in features], axis=0))
+        # Use the Hugging Face default collator for non-graph features
+        non_graph_batch = default_data_collator(non_graph_features)
 
-        return batch
+        # Combine graph and non-graph batches
+        combined_batch = {**non_graph_batch, "graph_input": batch}
+
+        return combined_batch

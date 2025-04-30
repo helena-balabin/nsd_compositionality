@@ -4,10 +4,40 @@ import hydra
 import mlflow
 from datasets import load_dataset
 from omegaconf import DictConfig
-from transformers import CLIPConfig, GraphormerConfig, Trainer, TrainingArguments
+from PIL import Image
+from transformers import CLIPConfig, CLIPProcessor, GraphormerConfig, Trainer, TrainingArguments
 
-# from nsd_compositionality.data.preprocess_graphormer import GraphormerDataCollator, preprocess_item
+from nsd_compositionality.data.preprocess_graphormer import GraphCLIPDataCollator, preprocess_item
 from nsd_compositionality.models.modeling_graph_image_model import GraphCLIPModel
+
+
+def preprocess_dataset(dataset, cfg):
+    # Initialize CLIP processor for image and text
+    clip_processor = CLIPProcessor.from_pretrained(cfg.model.pretrained_model_name_or_path)
+
+    # Preprocess the dataset
+    def preprocess_function(example):
+        # Preprocess image and text
+        processed = clip_processor(
+            text=example["sentences_raw"],
+            images=[Image.open(os.path.join(cfg.data.image_base_path, img)) for img in example["filepath"]],
+            return_tensors="pt",
+            padding="max_length",
+            truncation=True,
+        )
+        # Preprocess graph input
+        graph_input = [preprocess_item(ex) for ex in example["graph_input"]]
+        processed["graph_input"] = graph_input
+        return processed
+
+    # Apply preprocessing
+    dataset = dataset.map(
+        preprocess_function,
+        batched=True,
+        num_proc=cfg.data.num_proc,
+        batch_size=cfg.data.batch_size,
+    )
+    return dataset
 
 
 @hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model")
@@ -25,8 +55,27 @@ def train_graph_image_model(cfg: DictConfig):
             cfg.data.hf_dataset_identifier,
             split=cfg.data.split,
         )
+        # Only keep the graph type column specified by model_type_graph_base in the config, remove all other
+        # columns that contain "_graphs"
+        target_graph_column = cfg.model.model_type_graph_base + "_" if cfg.model.model_type_graph_base else ""
+        target_graph_column = target_graph_column + cfg.model.model_type + "_graphs"
+        dataset = dataset.remove_columns(
+            [col for col in dataset.column_names if col.endswith("_graphs") and col != target_graph_column]
+        )
+        # Rename the target graph column to "input_graphs"
+        dataset = dataset.rename_column(target_graph_column, "graph_input")
+        # Filter out data with empty graphs: num_nodes == 0 or edge_index == [[], []]
+        dataset = dataset.filter(
+            lambda x: x["graph_input"]["num_nodes"] > 0 or x["graph_input"]["edge_index"] != [[], []]
+        )
         # Make sure the dataset is shuffled
-        dataset = dataset.shuffle(seed=cfg.data.seed)
+        dataset = dataset.shuffle(seed=cfg.data.seed).select(range(500))  # TODO remove later
+
+        # Preprocess the dataset
+        dataset = preprocess_dataset(dataset, cfg)
+        # Push it to the huggingface hub
+        if cfg.data.push_to_hub:
+            dataset.push_to_hub(cfg.data.hf_dataset_identifier_processed + "_" + target_graph_column)
 
         # Set a validation set aside
         dataset = dataset.train_test_split(test_size=cfg.data.validation_split, seed=cfg.data.seed)
@@ -34,18 +83,11 @@ def train_graph_image_model(cfg: DictConfig):
         train_dataset = dataset["train"]
         validation_dataset = dataset["test"]
 
-        # TODO preprocess the dataset with GraphormerDataCollator on the fly, similar to HF example,
-        # make sure all the features are preserved
-        # It is also possible to apply this preprocessing on the fly, in the DataCollator's parameters
-        # (by setting on_the_fly_processing to True):
-        # not all datasets are as small as ogbg-molhiv, and for large graphs, it might be too costly to
-        # store all the preprocessed data beforehand.
-
         # Create a configuration for the GraphCLIP Model
         graphormer_config = GraphormerConfig()
         config = CLIPConfig(
             graph_config=graphormer_config,
-            graph_pair_type="image",
+            graph_pair_type=cfg.model.model_type,
             pretrained_model_name_or_path=cfg.model.pretrained_model_name_or_path,
         )
 
@@ -75,20 +117,18 @@ def train_graph_image_model(cfg: DictConfig):
             args=training_args,
             train_dataset=train_dataset,
             eval_dataset=validation_dataset,
+            data_collator=GraphCLIPDataCollator(on_the_fly_processing=False),
         )
 
         # Train the model
         trainer.train()
 
         # Save the trained model
-        model_save_path = os.path.join(cfg.output_dir, "graph_clip_model")
+        model_save_path = os.path.join(cfg.output_dir, "graph_clip_model" + "_" + target_graph_column)
         trainer.save_model(model_save_path)
-        mlflow.log_artifact(model_save_path)
 
         # Push the model to the huggingface hub
-        model.push_to_hub(cfg.model.huggingface_hub_model_id)
-
-        print(f"Model saved to {model_save_path}")
+        model.push_to_hub(cfg.model.huggingface_hub_model_id + "_" + target_graph_column)
 
 
 if __name__ == "__main__":

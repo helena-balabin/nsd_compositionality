@@ -3,13 +3,20 @@ output_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
 
 data:
   hf_dataset_identifier: "helena-balabin/vg_coco_overlap_for_graphormer"
+  hf_dataset_identifier_processed: "helena-balabin/vg_coco_overlap_for_graphormer_processed"
+  image_base_path: ${oc.env:LARGE_DATA_PATH}/vg/coco_images
+  push_to_hub: true
   split: "train"
   seed: 42
+  num_proc: 8
+  batch_size: 256
   validation_split: 0.1
 
 model:
   pretrained_model_name_or_path: "openai/clip-vit-base-patch32"
-  huggingface_hub_model_id": "helena-balabin/clip-graphormer-image"
+  huggingface_hub_model_id": "helena-balabin/clip-graphormer"
+  model_type: "image"
+  model_type_graph_base: "filtered"
 
 training:
   batch_size: 16
