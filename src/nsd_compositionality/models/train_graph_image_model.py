@@ -67,12 +67,12 @@ class ThreePhaseTrainingCallback(TrainerCallback):
 
         # Phase 2: Unfreeze the last third of the text or image encoder
         elif current_epoch < 2 * self.phase_epochs:
-            if self.cfg.model.graph_pair_type == "text":
+            if self.cfg.model.model_type == "text":
                 self.model.unfreeze_partial_layers(
                     "text",
                     num_layers=self.model.text_model.config.num_hidden_layers // 3,
                 )
-            elif self.cfg.model.graph_pair_type == "image":
+            elif self.cfg.model.model_type == "image":
                 self.model.unfreeze_partial_layers(
                     "vision",
                     num_layers=self.model.vision_model.config.num_hidden_layers // 3,
@@ -80,12 +80,12 @@ class ThreePhaseTrainingCallback(TrainerCallback):
 
         # Phase 3: Unfreeze all parameters of the text or image encoder
         else:
-            if self.cfg.model.graph_pair_type == "text":
+            if self.cfg.model.model_type == "text":
                 self.model.unfreeze_partial_layers(
                     "text",
                     num_layers=self.model.text_model.config.num_hidden_layers,
                 )
-            elif self.cfg.model.graph_pair_type == "image":
+            elif self.cfg.model.model_type == "image":
                 self.model.unfreeze_partial_layers(
                     "vision",
                     num_layers=self.model.vision_model.config.num_hidden_layers,
@@ -146,14 +146,16 @@ def train_graph_image_model(cfg: DictConfig):
             mlflow.log_param("empty_graphs_ratio", 1 - len(dataset) / len_dataset_pre)
             # Make sure the dataset is shuffled
             dataset = dataset.shuffle(seed=cfg.data.seed)
-            if cfg.data.n_samples > 0:
-                dataset = dataset.select(range(cfg.data.n_samples))
 
             # Preprocess the dataset
             dataset = preprocess_dataset(dataset, cfg)
             # Push it to the huggingface hub
             if cfg.data.push_to_hub:
                 dataset.push_to_hub(cfg.data.hf_dataset_identifier_processed + "_" + target_graph_column)
+
+        # For debug purposes, limit the number of samples
+        if cfg.data.n_samples > 0:
+            dataset = dataset.select(range(cfg.data.n_samples))
 
         # Log the number of samples in the dataset
         mlflow.log_param("len_dataset", len(dataset))
@@ -190,13 +192,15 @@ def train_graph_image_model(cfg: DictConfig):
         # Define the optimizer
         optimizer = AdamW(model.parameters(), lr=cfg.training.learning_rate, weight_decay=cfg.training.weight_decay)
 
-        # Define the MultiStepLR scheduler, which will decrease the learning rate at specified milestones
+        training_steps_per_epoch = (
+            len(train_dataset) // (cfg.training.batch_size * cfg.training.gradient_accumulation_steps) + 1
+        )
+        # Define the MultiStepLR scheduler with milestones corresponding to phase boundaries
         scheduler = MultiStepLR(
             optimizer,
-            # Milestones correspond to the phases of training
             milestones=[
-                cfg.training.epochs // 3,
-                2 * cfg.training.epochs // 3,
+                cfg.training.epochs // 3 * training_steps_per_epoch,
+                2 * cfg.training.epochs // 3 * training_steps_per_epoch,
             ],
             gamma=cfg.training.lr_gamma,
         )
@@ -207,6 +211,7 @@ def train_graph_image_model(cfg: DictConfig):
             eval_strategy="steps",
             eval_steps=cfg.training.eval_steps,
             save_strategy="steps",
+            save_steps=cfg.training.save_steps,
             learning_rate=cfg.training.learning_rate,
             per_device_train_batch_size=cfg.training.batch_size,
             num_train_epochs=cfg.training.epochs,
@@ -217,10 +222,7 @@ def train_graph_image_model(cfg: DictConfig):
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
             greater_is_better=False,
-            callbacks=[
-                EarlyStoppingCallback(early_stopping_patience=cfg.training.early_stopping_patience),
-                ThreePhaseTrainingCallback(model, cfg.training.epochs, cfg.training.epochs // 3, cfg),
-            ],
+            lr_scheduler_type="constant",
             report_to=["mlflow"],  # Integrate with MLflow
         )
 
@@ -232,6 +234,10 @@ def train_graph_image_model(cfg: DictConfig):
             eval_dataset=validation_dataset,
             data_collator=GraphCLIPDataCollator(on_the_fly_processing=False),
             optimizers=(optimizer, scheduler),
+            callbacks=[
+                EarlyStoppingCallback(early_stopping_patience=cfg.training.early_stopping_patience),
+                ThreePhaseTrainingCallback(model, cfg.training.epochs, cfg.training.epochs // 3, cfg),
+            ],
         )
 
         # Train the model
