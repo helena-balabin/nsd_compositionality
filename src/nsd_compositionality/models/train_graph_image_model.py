@@ -6,7 +6,7 @@ from datasets import Dataset, load_dataset
 from dotenv import load_dotenv
 from omegaconf import DictConfig
 from PIL import Image
-from transformers import CLIPConfig, CLIPProcessor, GraphormerConfig, Trainer, TrainingArguments
+from transformers import CLIPConfig, CLIPProcessor, EarlyStoppingCallback, GraphormerConfig, Trainer, TrainingArguments
 
 from nsd_compositionality.data.preprocess_graphormer import GraphCLIPDataCollator, preprocess_item
 from nsd_compositionality.models.modeling_graph_image_model import GraphCLIPModel
@@ -61,6 +61,7 @@ def train_graph_image_model(cfg: DictConfig):
         if cfg.data.use_preprocessed:
             dataset = load_dataset(
                 cfg.data.hf_dataset_identifier_processed + "_" + target_graph_column,
+                split=cfg.data.split,
                 cache_dir=cfg.data.cache_dir,
             )
         else:
@@ -146,6 +147,9 @@ def train_graph_image_model(cfg: DictConfig):
             logging_steps=cfg.training.logging_steps,
             save_total_limit=cfg.training.save_total_limit,
             load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",
+            greater_is_better=False,
+            callbacks=[EarlyStoppingCallback(early_stopping_patience=cfg.training.early_stopping_patience)],
             report_to=["mlflow"],  # Integrate with MLflow
         )
 
