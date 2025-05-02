@@ -3,6 +3,7 @@ import os
 import hydra
 import mlflow
 from datasets import Dataset, load_dataset
+from dotenv import load_dotenv
 from omegaconf import DictConfig
 from PIL import Image
 from transformers import CLIPConfig, CLIPProcessor, GraphormerConfig, Trainer, TrainingArguments
@@ -42,6 +43,8 @@ def preprocess_dataset(dataset, cfg):
 
 @hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model")
 def train_graph_image_model(cfg: DictConfig):
+    # Load environment variables
+    load_dotenv("../../../.env")
     # Initialize MLflow
     mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.mlflow.experiment_name)
