@@ -20,13 +20,15 @@ model:
   model_type: "image"
   model_type_graph_base: "filtered"
   graphormer_size: "small"
+  dropout: 0.2
 
 training:
   batch_size: 128
   gradient_accumulation_steps: 4
   learning_rate: 2e-5
   epochs: 25 # 1 epoch for testing, 25 for full training
-  weight_decay: 0.01
+  weight_decay: 0.1
+  early_stopping_patience: 10
   logging_steps: 50
   eval_steps: 100 # 1 step for testing, 100 for full training
   save_total_limit: 3

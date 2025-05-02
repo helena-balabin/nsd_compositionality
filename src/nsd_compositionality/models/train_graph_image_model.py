@@ -120,9 +120,12 @@ def train_graph_image_model(cfg: DictConfig):
                 embedding_dim=512,
                 ffn_embedding_dim=512,
                 num_hidden_layers=6,
+                dropout=cfg.model.dropout,
             )
         else:
-            graphormer_config = GraphormerConfig()
+            graphormer_config = GraphormerConfig(
+                dropout=cfg.model.dropout,
+            )
 
         config = CLIPConfig(
             graph_config=graphormer_config,
