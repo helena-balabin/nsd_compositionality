@@ -1,0 +1,40 @@
+output_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
+
+data:
+  hf_dataset_identifier: "helena-balabin/vg_coco_overlap_for_graphormer"
+  hf_dataset_identifier_processed: "helena-balabin/vg_coco_overlap_for_graphormer_processed"
+  dataloader_num_workers: 8
+  cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  image_base_path: ${oc.env:LARGE_DATA_PATH}/vg/coco_images
+  push_to_hub: true
+  use_preprocessed: false
+  split: "train"
+  seed: 42
+  num_proc: 8
+  batch_size: 256
+  validation_split: 0.1
+  n_samples: -1 # -1 for all
+
+model:
+  pretrained_model_name_or_path: "openai/clip-vit-base-patch32"
+  huggingface_hub_model_id: "helena-balabin/clip-graphormer"
+  model_type: "text"
+  model_type_graph_base: "amr"
+  graphormer_size: "small"
+  dropout: 0.2
+
+training:
+  batch_size: 128 # 128 for full training
+  gradient_accumulation_steps: 1
+  learning_rate: 1e-4
+  lr_gamma: 0.1
+  epochs: 5
+  weight_decay: 0.1
+  logging_steps: 20 # 1 step for testing, 10 for full training
+  eval_steps: 20 # 1 step for testing, 10 for full training
+  save_steps: 100
+  save_total_limit: 3
+
+mlflow:
+  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI}
+  experiment_name: "GraphCLIP + Text Graphs Training"

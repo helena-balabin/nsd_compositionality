@@ -95,7 +95,10 @@ def train_graph_image_model(cfg: DictConfig):
 
     # Define the target graph column based on the model type
     target_graph_column = cfg.model.model_type_graph_base + "_" if cfg.model.model_type_graph_base else ""
-    target_graph_column = target_graph_column + cfg.model.model_type + "_graphs"
+    if cfg.model.model_type_graph_base == "amr" or cfg.model.model_type_graph_base == "dependency":
+        target_graph_column = target_graph_column + "graphs"
+    else:
+        target_graph_column = target_graph_column + cfg.model.model_type + "_graphs"
 
     with mlflow.start_run():
         # Log configuration
