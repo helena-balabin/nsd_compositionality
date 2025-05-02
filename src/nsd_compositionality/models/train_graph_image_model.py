@@ -6,6 +6,8 @@ from datasets import Dataset, load_dataset
 from dotenv import load_dotenv
 from omegaconf import DictConfig
 from PIL import Image
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import MultiStepLR
 from transformers import (
     CLIPConfig,
     CLIPProcessor,
@@ -185,6 +187,20 @@ def train_graph_image_model(cfg: DictConfig):
         # Initialize the model
         model = GraphCLIPModel(config)
 
+        # Define the optimizer
+        optimizer = AdamW(model.parameters(), lr=cfg.training.learning_rate, weight_decay=cfg.training.weight_decay)
+
+        # Define the MultiStepLR scheduler, which will decrease the learning rate at specified milestones
+        scheduler = MultiStepLR(
+            optimizer,
+            # Milestones correspond to the phases of training
+            milestones=[
+                cfg.training.epochs // 3,
+                2 * cfg.training.epochs // 3,
+            ],
+            gamma=cfg.training.lr_gamma,
+        )
+
         # Define training arguments
         training_args = TrainingArguments(
             output_dir=cfg.output_dir,
@@ -215,6 +231,7 @@ def train_graph_image_model(cfg: DictConfig):
             train_dataset=train_dataset,
             eval_dataset=validation_dataset,
             data_collator=GraphCLIPDataCollator(on_the_fly_processing=False),
+            optimizers=(optimizer, scheduler),
         )
 
         # Train the model
