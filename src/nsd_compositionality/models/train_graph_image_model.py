@@ -103,7 +103,16 @@ def train_graph_image_model(cfg: DictConfig):
         validation_dataset = dataset["test"]
 
         # Create a configuration for the GraphCLIP Model
-        graphormer_config = GraphormerConfig()
+        if cfg.model.graphormer_size == "small":
+            graphormer_config = GraphormerConfig(
+                hidden_size=512,
+                embedding_dim=512,
+                ffn_embedding_dim=512,
+                num_hidden_layers=6,
+            )
+        else:
+            graphormer_config = GraphormerConfig()
+
         config = CLIPConfig(
             graph_config=graphormer_config,
             graph_pair_type=cfg.model.model_type,

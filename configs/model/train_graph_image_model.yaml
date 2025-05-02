@@ -4,7 +4,7 @@ data:
   hf_dataset_identifier: "helena-balabin/vg_coco_overlap_for_graphormer"
   hf_dataset_identifier_processed: "helena-balabin/vg_coco_overlap_for_graphormer_processed"
   image_base_path: ${oc.env:LARGE_DATA_PATH}/vg/coco_images
-  push_to_hub: true
+  push_to_hub: false
   split: "train"
   seed: 42
   num_proc: 8
@@ -17,10 +17,12 @@ model:
   huggingface_hub_model_id: "helena-balabin/clip-graphormer"
   model_type: "image"
   model_type_graph_base: "filtered"
+  graphormer_size: "small"
 
 training:
-  batch_size: 32
-  learning_rate: 5e-5
+  batch_size: 128
+  gradient_accumulation_steps: 4
+  learning_rate: 2e-5
   epochs: 25 # 1 epoch for testing, 25 for full training
   weight_decay: 0.01
   logging_steps: 50
