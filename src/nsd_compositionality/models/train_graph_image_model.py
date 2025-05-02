@@ -8,15 +8,7 @@ from omegaconf import DictConfig
 from PIL import Image
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import MultiStepLR
-from transformers import (
-    CLIPConfig,
-    CLIPProcessor,
-    EarlyStoppingCallback,
-    GraphormerConfig,
-    Trainer,
-    TrainerCallback,
-    TrainingArguments,
-)
+from transformers import CLIPConfig, CLIPProcessor, GraphormerConfig, Trainer, TrainerCallback, TrainingArguments
 
 from nsd_compositionality.data.preprocess_graphormer import GraphCLIPDataCollator, preprocess_item
 from nsd_compositionality.models.modeling_graph_image_model import GraphCLIPModel
@@ -235,7 +227,6 @@ def train_graph_image_model(cfg: DictConfig):
             data_collator=GraphCLIPDataCollator(on_the_fly_processing=False),
             optimizers=(optimizer, scheduler),
             callbacks=[
-                EarlyStoppingCallback(early_stopping_patience=cfg.training.early_stopping_patience),
                 ThreePhaseTrainingCallback(model, cfg.training.epochs, cfg.training.epochs // 3, cfg),
             ],
         )
