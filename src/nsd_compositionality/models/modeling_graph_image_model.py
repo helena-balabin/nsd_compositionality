@@ -171,3 +171,51 @@ class GraphCLIPModel(CLIPModel):
             text_model_output=text_outputs,
             graph_model_output=graph_outputs,
         )
+
+    def freeze_layers(self, freeze_vision: bool = False, freeze_text: bool = False, freeze_graph: bool = False):
+        """
+        Freeze or unfreeze layers of the vision, text, and graph backbones.
+
+        Args:
+            freeze_vision (bool): Whether to freeze the vision backbone.
+            freeze_text (bool): Whether to freeze the text backbone.
+            freeze_graph (bool): Whether to freeze the graph backbone.
+        """
+        if freeze_vision:
+            for param in self.vision_model.parameters():
+                param.requires_grad = False
+
+        if freeze_text:
+            for param in self.text_model.parameters():
+                param.requires_grad = False
+
+        if freeze_graph:
+            for param in self.graph_model.parameters():
+                param.requires_grad = False
+
+    def unfreeze_partial_layers(self, model_part: str, num_layers: int):
+        """
+        Unfreeze the last `num_layers` of a specific model part.
+
+        Args:
+            model_part (str): The part of the model to unfreeze ('vision', 'text', or 'graph').
+            num_layers (int): Number of layers to unfreeze from the end.
+        """
+        if model_part == "vision":
+            layers = list(self.vision_model.encoder.layers)
+        elif model_part == "text":
+            layers = list(self.text_model.encoder.layers)
+        elif model_part == "graph":
+            layers = list(self.graph_model.encoder.layers)
+        else:
+            raise ValueError("Invalid model_part. Must be 'vision', 'text', or 'graph'.")
+
+        # Freeze all layers first
+        for layer in layers:
+            for param in layer.parameters():
+                param.requires_grad = False
+
+        # Unfreeze the last `num_layers`
+        for layer in layers[-num_layers:]:
+            for param in layer.parameters():
+                param.requires_grad = True

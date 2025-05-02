@@ -6,7 +6,15 @@ from datasets import Dataset, load_dataset
 from dotenv import load_dotenv
 from omegaconf import DictConfig
 from PIL import Image
-from transformers import CLIPConfig, CLIPProcessor, EarlyStoppingCallback, GraphormerConfig, Trainer, TrainingArguments
+from transformers import (
+    CLIPConfig,
+    CLIPProcessor,
+    EarlyStoppingCallback,
+    GraphormerConfig,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
+)
 
 from nsd_compositionality.data.preprocess_graphormer import GraphCLIPDataCollator, preprocess_item
 from nsd_compositionality.models.modeling_graph_image_model import GraphCLIPModel
@@ -39,6 +47,47 @@ def preprocess_dataset(dataset, cfg):
         batch_size=cfg.data.batch_size,
     )
     return dataset
+
+
+class ThreePhaseTrainingCallback(TrainerCallback):
+    def __init__(self, model, total_epochs, phase_epochs, cfg):
+        self.model = model
+        self.total_epochs = total_epochs
+        self.phase_epochs = phase_epochs
+        self.cfg = cfg
+
+    def on_epoch_begin(self, args, state, control, **kwargs):
+        current_epoch = state.epoch
+
+        # Phase 1: Train only the graph component
+        if current_epoch < self.phase_epochs:
+            self.model.freeze_layers(freeze_vision=True, freeze_text=True, freeze_graph=False)
+
+        # Phase 2: Unfreeze the last third of the text or image encoder
+        elif current_epoch < 2 * self.phase_epochs:
+            if self.cfg.model.graph_pair_type == "text":
+                self.model.unfreeze_partial_layers(
+                    "text",
+                    num_layers=self.model.text_model.config.num_hidden_layers // 3,
+                )
+            elif self.cfg.model.graph_pair_type == "image":
+                self.model.unfreeze_partial_layers(
+                    "vision",
+                    num_layers=self.model.vision_model.config.num_hidden_layers // 3,
+                )
+
+        # Phase 3: Unfreeze all parameters of the text or image encoder
+        else:
+            if self.cfg.model.graph_pair_type == "text":
+                self.model.unfreeze_partial_layers(
+                    "text",
+                    num_layers=self.model.text_model.config.num_hidden_layers,
+                )
+            elif self.cfg.model.graph_pair_type == "image":
+                self.model.unfreeze_partial_layers(
+                    "vision",
+                    num_layers=self.model.vision_model.config.num_hidden_layers,
+                )
 
 
 @hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model")
@@ -152,11 +201,14 @@ def train_graph_image_model(cfg: DictConfig):
             load_best_model_at_end=True,
             metric_for_best_model="eval_loss",
             greater_is_better=False,
-            callbacks=[EarlyStoppingCallback(early_stopping_patience=cfg.training.early_stopping_patience)],
+            callbacks=[
+                EarlyStoppingCallback(early_stopping_patience=cfg.training.early_stopping_patience),
+                ThreePhaseTrainingCallback(model, cfg.training.epochs, cfg.training.epochs // 3, cfg),
+            ],
             report_to=["mlflow"],  # Integrate with MLflow
         )
 
-        # Define Trainer
+        # Initialize the Trainer
         trainer = Trainer(
             model=model,
             args=training_args,
@@ -168,13 +220,9 @@ def train_graph_image_model(cfg: DictConfig):
         # Train the model
         trainer.train()
 
-        # Define the model save path
+        # Save and push the final model
         model_save_path = os.path.join(cfg.output_dir, "graph_clip_model" + "_" + target_graph_column)
-
-        # Push the model to the huggingface hub
         model.push_to_hub(cfg.model.huggingface_hub_model_id + "_" + target_graph_column)
-
-        # And save it locally
         trainer.save_model(model_save_path)
 
 
