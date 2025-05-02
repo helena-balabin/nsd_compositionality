@@ -12,7 +12,7 @@ data:
   num_proc: 8
   batch_size: 256
   validation_split: 0.1
-  n_samples: 100 # -1 for all
+  n_samples: -1 # -1 for all
 
 model:
   pretrained_model_name_or_path: "openai/clip-vit-base-patch32"
@@ -23,15 +23,15 @@ model:
   dropout: 0.2
 
 training:
-  batch_size: 32 # 128 for full training
-  gradient_accumulation_steps: 1 # 1 for testing, 4 for full training
+  batch_size: 128 # 128 for full training
+  gradient_accumulation_steps: 4 # 1 for testing, 4 for full training
   learning_rate: 1e-4
   lr_gamma: 0.1
-  epochs: 6 # 6 epochs for testing, 25 for full training
+  epochs: 25 # 6 epochs for testing, 25 for full training
   weight_decay: 0.1
   early_stopping_patience: 10
-  logging_steps: 1 # 1 step for testing, 10 for full training
-  eval_steps: 1 # 1 step for testing, 10 for full training
+  logging_steps: 10 # 1 step for testing, 10 for full training
+  eval_steps: 10 # 1 step for testing, 10 for full training
   save_steps: 50
   save_total_limit: 3
 
