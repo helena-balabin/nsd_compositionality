@@ -2,6 +2,7 @@ import os
 
 import hydra
 import mlflow
+import torch
 from datasets import Dataset, load_dataset
 from dotenv import load_dotenv
 from omegaconf import DictConfig
@@ -180,6 +181,7 @@ def train_graph_image_model(cfg: DictConfig):
 
         # Initialize the model
         model = GraphCLIPModel(config)
+        model.to("cuda" if torch.cuda.is_available() else "cpu")
 
         # Define the optimizer
         optimizer = AdamW(model.parameters(), lr=cfg.training.learning_rate, weight_decay=cfg.training.weight_decay)
@@ -207,6 +209,7 @@ def train_graph_image_model(cfg: DictConfig):
             learning_rate=cfg.training.learning_rate,
             per_device_train_batch_size=cfg.training.batch_size,
             num_train_epochs=cfg.training.epochs,
+            dataloader_num_workers=cfg.data.dataloader_num_workers,
             weight_decay=cfg.training.weight_decay,
             logging_dir=os.path.join(cfg.output_dir, "logs"),
             logging_steps=cfg.training.logging_steps,
