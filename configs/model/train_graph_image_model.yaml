@@ -3,14 +3,14 @@ output_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
 data:
   hf_dataset_identifier: "helena-balabin/vg_coco_overlap_for_graphormer"
   hf_dataset_identifier_processed: "helena-balabin/vg_coco_overlap_for_graphormer_processed"
-  dataloader_num_workers: 8
+  dataloader_num_workers: 16
   cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
   image_base_path: ${oc.env:LARGE_DATA_PATH}/vg/coco_images
   push_to_hub: false
   use_preprocessed: true
   split: "train"
   seed: 42
-  num_proc: 8
+  num_proc: 16
   batch_size: 256
   validation_split: 0.1
   n_samples: -1 # -1 for all

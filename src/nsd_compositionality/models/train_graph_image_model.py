@@ -211,6 +211,7 @@ def train_graph_image_model(cfg: DictConfig):
             save_steps=cfg.training.save_steps,
             learning_rate=cfg.training.learning_rate,
             per_device_train_batch_size=cfg.training.batch_size,
+            per_device_eval_batch_size=cfg.training.batch_size,
             num_train_epochs=cfg.training.epochs,
             dataloader_num_workers=cfg.data.dataloader_num_workers,
             weight_decay=cfg.training.weight_decay,
