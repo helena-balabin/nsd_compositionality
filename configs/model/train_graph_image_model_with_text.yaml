@@ -31,7 +31,7 @@ training:
   epochs: 5
   weight_decay: 0.1
   logging_steps: 20 # 1 step for testing, 10 for full training
-  eval_steps: 20 # 1 step for testing, 10 for full training
+  eval_steps: 40 # 1 step for testing, 10 for full training
   save_steps: 100
   save_total_limit: 3
 
