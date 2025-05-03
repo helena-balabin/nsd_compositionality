@@ -204,9 +204,9 @@ class GraphCLIPModel(CLIPModel):
         if model_part == "vision":
             layers = list(self.vision_model.encoder.layers)
         elif model_part == "text":
-            layers = list(self.text_model.encoder.layers)
+            layers = list(self.text_model.text_model.encoder.layers)
         elif model_part == "graph":
-            layers = list(self.graph_model.encoder.layers)
+            layers = list(self.graph_model.graph_encoder.layers)
         else:
             raise ValueError("Invalid model_part. Must be 'vision', 'text', or 'graph'.")
 

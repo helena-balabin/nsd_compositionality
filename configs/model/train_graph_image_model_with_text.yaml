@@ -6,8 +6,8 @@ data:
   dataloader_num_workers: 8
   cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
   image_base_path: ${oc.env:LARGE_DATA_PATH}/vg/coco_images
-  push_to_hub: true
-  use_preprocessed: false
+  push_to_hub: false
+  use_preprocessed: true
   split: "train"
   seed: 42
   num_proc: 8

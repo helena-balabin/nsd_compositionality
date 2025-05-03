@@ -85,7 +85,7 @@ class ThreePhaseTrainingCallback(TrainerCallback):
                 )
 
 
-@hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model")
+@hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model_with_text")
 def train_graph_image_model(cfg: DictConfig):
     # Load environment variables
     load_dotenv("../../../.env")
