@@ -15,14 +15,11 @@ from nsd_compositionality.data.preprocess_graphormer import GraphCLIPDataCollato
 from nsd_compositionality.models.modeling_graph_image_model import GraphCLIPModel
 
 
-def preprocess_dataset(dataset, cfg):
-    # Initialize CLIP processor for image and text
-    clip_processor = CLIPProcessor.from_pretrained(cfg.model.pretrained_model_name_or_path)
-
+def preprocess_dataset(dataset, processor, cfg):
     # Preprocess the dataset
     def preprocess_function(example):
         # Preprocess image and text
-        processed = clip_processor(
+        processed = processor(
             text=example["sentences_raw"],
             images=[Image.open(os.path.join(cfg.data.image_base_path, img)) for img in example["filepath"]],
             return_tensors="pt",
@@ -85,13 +82,16 @@ class ThreePhaseTrainingCallback(TrainerCallback):
                 )
 
 
-@hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model_with_text")
+@hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model")
 def train_graph_image_model(cfg: DictConfig):
     # Load environment variables
     load_dotenv("../../../.env")
     # Initialize MLflow
     mlflow.set_tracking_uri(cfg.mlflow.tracking_uri)
     mlflow.set_experiment(cfg.mlflow.experiment_name)
+
+    # Initialize the processor
+    clip_processor = CLIPProcessor.from_pretrained(cfg.model.pretrained_model_name_or_path)
 
     # Define the target graph column based on the model type
     target_graph_column = cfg.model.model_type_graph_base + "_" if cfg.model.model_type_graph_base else ""
@@ -144,7 +144,7 @@ def train_graph_image_model(cfg: DictConfig):
             dataset = dataset.shuffle(seed=cfg.data.seed)
 
             # Preprocess the dataset
-            dataset = preprocess_dataset(dataset, cfg)
+            dataset = preprocess_dataset(dataset, clip_processor, cfg)
             # Push it to the huggingface hub
             if cfg.data.push_to_hub:
                 dataset.push_to_hub(cfg.data.hf_dataset_identifier_processed + "_" + target_graph_column)
@@ -218,7 +218,7 @@ def train_graph_image_model(cfg: DictConfig):
             logging_dir=os.path.join(cfg.output_dir, "logs"),
             logging_steps=cfg.training.logging_steps,
             save_total_limit=cfg.training.save_total_limit,
-            load_best_model_at_end=True,
+            load_best_model_at_end=False,
             metric_for_best_model="eval_loss",
             greater_is_better=False,
             lr_scheduler_type="constant",
@@ -244,6 +244,8 @@ def train_graph_image_model(cfg: DictConfig):
         # Save and push the final model
         model_save_path = os.path.join(cfg.output_dir, "graph_clip_model" + "_" + target_graph_column)
         model.push_to_hub(cfg.model.huggingface_hub_model_id + "_" + target_graph_column)
+        # Also push the processor
+        clip_processor.push_to_hub(cfg.model.huggingface_hub_model_id + "_" + target_graph_column)
         trainer.save_model(model_save_path)
 
 

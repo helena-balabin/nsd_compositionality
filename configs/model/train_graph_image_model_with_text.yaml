@@ -27,8 +27,8 @@ training:
   batch_size: 128 # 128 for full training
   gradient_accumulation_steps: 1
   learning_rate: 1e-4
-  lr_gamma: 0.1
-  epochs: 5
+  lr_gamma: 0.5
+  epochs: 3 # 8 times less than image, because there is 8x more data
   weight_decay: 0.1
   logging_steps: 20 # 1 step for testing, 10 for full training
   eval_steps: 40 # 1 step for testing, 10 for full training

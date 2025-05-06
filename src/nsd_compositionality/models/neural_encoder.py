@@ -111,6 +111,8 @@ def run_neural_encoder(cfg: DictConfig) -> None:
         all_betas = []
         # Gather data from all sessions
         for session in range(1, cfg.max_sessions + 1):
+            # TODO try catch FileNotFoundError and append empty array
+            # TODO Also make sure to leave out those trials in the metadata
             session_betas = nsd.read_betas(
                 subject,
                 session_index=session,
@@ -167,7 +169,8 @@ def run_neural_encoder(cfg: DictConfig) -> None:
         for model_id in cfg.model_ids:
             # Define layers to use
             if cfg.by_layer:
-                if "CLIP" in model_id:
+                # TODO use both text and image embeddings?
+                if "clip" in model_id.lower():
                     n_layers = CLIPVisionConfig.from_pretrained(model_id).num_hidden_layers
                 else:
                     n_layers = ViTConfig.from_pretrained(model_id).num_hidden_layers

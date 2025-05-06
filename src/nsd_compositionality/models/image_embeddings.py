@@ -58,11 +58,12 @@ def run_image_embeddings(cfg: DictConfig) -> None:
         logger.info(f"Loading {model_id}")
 
         # Load model and processor
-        if "CLIP" in model_id:
+        if "clip" in model_id.lower():
             processor = CLIPProcessor.from_pretrained(
                 model_id,
                 cache_dir=cfg.data.model_cache_dir,
             )
+            # TODO use both text and image embeddings?
             model = CLIPVisionModel.from_pretrained(
                 model_id,
                 cache_dir=cfg.data.model_cache_dir,
@@ -89,6 +90,7 @@ def run_image_embeddings(cfg: DictConfig) -> None:
 
         # Iterate through the dataset, compute embeddings in batches
         for i in tqdm(range(0, len(coco_dataset), batch_size), desc=f"Computing embeddings for {model_id}"):
+            # TODO use both text and image embeddings?
             batch = coco_dataset[i : i + batch_size]["image"]  # noqa
             inputs = processor(images=batch, return_tensors="pt")
             inputs = {k: v.to(device) for k, v in inputs.items()}
