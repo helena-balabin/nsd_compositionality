@@ -1,0 +1,5 @@
+vg_id: 2340934 # The Visual Genome ID of the scene to visualize
+relationships_file: ${oc.env:LARGE_DATA_PATH}/vg/data_release/relationships.json # Path to the relationships file
+output_dir: ${oc.env:LARGE_DATA_PATH}/vg/scene_graphs # Directory to save the output
+image_file: "scene_graph.png" # Name of the output image file
+filtered: True
