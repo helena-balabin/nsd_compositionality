@@ -103,6 +103,53 @@ def visualize_neural_encoder_results(cfg: DictConfig) -> None:
         fig_pearson.write_image(output_path_pearson)
         logger.info(f"Saved Pearson Correlation figure for model {model_id} to {output_path_pearson}")
 
+    # Create one plot per metric including all models
+    metrics = [
+        ("pairwise_accuracy_mean", "pairwise_accuracy_std", "Pairwise Accuracy"),
+        ("pearson_correlation_mean", "pearson_correlation_std", "Pearson Correlation"),
+    ]
+    # Get colors accoridng to the number of models from a color palette
+    colors = ["#589dd6", "#ae7fb5", "#7cb8e0", "#8fd1e9", "#a3d9f0", "#b7e0f7", "#c9e7fc"][: len(unique_models)]
+
+    for metric_mean, metric_std, metric_name in metrics:
+        fig = go.Figure()
+        for color, model_id in zip(colors, unique_models):
+            model_data = grouped[grouped["model_id"] == model_id]
+            fig.add_trace(
+                go.Scatter(
+                    x=model_data["layer_idx"],
+                    y=model_data[metric_mean],
+                    mode="lines+markers",
+                    name=model_id.split("/")[-1],
+                    error_y=dict(type="data", array=model_data[metric_std], visible=True),
+                    line={"color": color},
+                )
+            )
+        fig.update_layout(
+            title=f"{metric_name} Across All Models",
+            title_x=0.5,
+            plot_bgcolor="white",
+            legend_title="Models",
+            legend=dict(
+                orientation="h",
+                yanchor="bottom",
+                y=-0.75,
+                xanchor="center",
+                x=0.5,
+                title_font=dict(size=18),
+                font=dict(size=16),
+            ),
+            xaxis_title="Layer Index",
+            yaxis_title=metric_name,
+            yaxis=dict(tickfont=dict(size=18)),
+            xaxis=dict(tickfont=dict(size=18)),
+            width=800,
+            height=400,
+        )
+        output_path = os.path.join(output_dir, f"all_models_{metric_name.replace(' ', '_').lower()}.png")
+        fig.write_image(output_path)
+        logger.info(f"Saved {metric_name} figure for all models to {output_path}")
+
 
 if __name__ == "__main__":
     visualize_neural_encoder_results()
