@@ -24,11 +24,7 @@ subjects: [
     # "subj08",
   ]
 
-model_ids:
-  [
-    "helena-balabin/clip-graphormer_filtered_image_graphs",
-    "openai/clip-vit-base-patch32",
-  ]
+model_ids: ["helena-balabin/clip-graphormer_filtered_image_graphs"]
 
 max_sessions: 40
 nsdgeneral_mask: true

@@ -26,13 +26,13 @@ model:
 training:
   batch_size: 128 # 128 for full training
   gradient_accumulation_steps: 1
-  learning_rate: 1e-4
-  lr_gamma: 0.5
+  learning_rate: 5e-5 # TODO use 1e-4
+  lr_gamma: 1 # TODO Use 0.5?
   epochs: 24 # 3 epochs for testing, 24 for full training
   weight_decay: 0.1
-  logging_steps: 20 # 1 step for testing, 10 for full training
-  eval_steps: 60 # 1 step for testing, 10 for full training
-  save_steps: 240
+  logging_steps: 80 # 1 step for testing, 10 for full training
+  eval_steps: 80 # 1 step for testing, 10 for full training
+  save_steps: 320
   save_total_limit: 3
 
 mlflow:

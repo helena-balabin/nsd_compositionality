@@ -5,9 +5,12 @@ data:
   output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/probing_graph_measures
 
 model_ids:
-  ["laion/CLIP-ViT-B-32-laion2B-s34B-b79K", "google/vit-base-patch16-224-in21k"]
+  [
+    "helena-balabin/clip-graphormer_filtered_image_graphs",
+    "openai/clip-vit-base-patch32",
+  ]
 
-ridge_cv: false
+ridge_cv: true
 cv: 5
 random_state: 42
 scoring: "f1"
