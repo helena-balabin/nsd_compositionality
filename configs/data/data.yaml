@@ -3,7 +3,12 @@ data:
   nsd_directory: nsd
   vg_directory: vg
   vg_metadata_dir: data_release
-  vg_metadata_hf_identifier: "helena-balabin/vg_coco_overlap"
+  vg_metadata_hf_identifier: "helena-balabin/vg_metadata"
+  vg_image_id_col: "image_id"
+  coco_id_col: "coco_id"
   cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  include_image_graphs: true
+  include_text_graphs: false
+  processed_hf_identifier: "helena-balabin/vg_for_graphormer"
 model:
   spacy_model: "en_core_web_trf"

@@ -36,43 +36,43 @@ def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name
     """
     if split_name == "train":
         vg_metadata = vg_metadata.filter(
-            lambda x: x["cocoid"] not in nsd_coco_ids,
+            lambda x: x[cfg.data.coco_id_col] not in nsd_coco_ids,
             num_proc=4,
         )
     elif split_name == "test":
         vg_metadata = vg_metadata.filter(
-            lambda x: x["cocoid"] in nsd_coco_ids,
+            lambda x: x[cfg.data.coco_id_col] in nsd_coco_ids,
             num_proc=4,
         )
     logger.info(f"Filtered VG metadata for {split_name} split, total entries: {len(vg_metadata)}")
 
-    # Add image graph properties using the derive_graphs function
-    vg_objects_file = vg_metadata_dir / "objects.json"
-    vg_relationships_file = vg_metadata_dir / "relationships.json"
-    graphs, filtered_graphs = derive_image_graphs(
-        vg_objects_file=vg_objects_file,
-        vg_relationships_file=vg_relationships_file,
-        image_ids=vg_metadata["vg_image_id"],
-    )
-    graphs = [graphs[img_id] for img_id in vg_metadata["vg_image_id"]]  # type: ignore
-    filtered_graphs = [filtered_graphs[img_id] for img_id in vg_metadata["vg_image_id"]]  # type: ignore
+    # Add image graph properties if specified in the config
+    if cfg.data.include_image_graphs:
+        vg_objects_file = vg_metadata_dir / "objects.json"
+        vg_relationships_file = vg_metadata_dir / "relationships.json"
+        graphs, filtered_graphs = derive_image_graphs(
+            vg_objects_file=vg_objects_file,
+            vg_relationships_file=vg_relationships_file,
+            image_ids=vg_metadata[cfg.data.vg_image_id_col],
+        )
+        graphs = [graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
+        filtered_graphs = [filtered_graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
+        vg_metadata = vg_metadata.add_column(name="image_graphs", column=graphs)
+        vg_metadata = vg_metadata.add_column(name="filtered_image_graphs", column=filtered_graphs)
 
-    # Add text graph properties using the derive_text_graphs function
-    texts = vg_metadata["sentences_raw"]
-    text_ids = vg_metadata["sentids"]
-    amr_graphs, dependency_graphs = derive_text_graphs(
-        texts=texts,
-        text_ids=text_ids,
-        spacy_model=cfg.model.spacy_model,
-    )
-    amr_graphs = [amr_graphs[tid] for tid in text_ids]  # type: ignore
-    dependency_graphs = [dependency_graphs[tid] for tid in text_ids]  # type: ignore
-
-    # Add everything as features to the metadata
-    vg_metadata = vg_metadata.add_column(name="amr_graphs", column=amr_graphs)
-    vg_metadata = vg_metadata.add_column(name="dependency_graphs", column=dependency_graphs)
-    vg_metadata = vg_metadata.add_column(name="image_graphs", column=graphs)
-    vg_metadata = vg_metadata.add_column(name="filtered_image_graphs", column=filtered_graphs)
+    # Add text graph properties if specified in the config
+    if cfg.data.include_text_graphs:
+        texts = vg_metadata["sentences_raw"]
+        text_ids = vg_metadata["sentids"]
+        amr_graphs, dependency_graphs = derive_text_graphs(
+            texts=texts,
+            text_ids=text_ids,
+            spacy_model=cfg.model.spacy_model,
+        )
+        amr_graphs = [amr_graphs[tid] for tid in text_ids]  # type: ignore
+        dependency_graphs = [dependency_graphs[tid] for tid in text_ids]  # type: ignore
+        vg_metadata = vg_metadata.add_column(name="amr_graphs", column=amr_graphs)
+        vg_metadata = vg_metadata.add_column(name="dependency_graphs", column=dependency_graphs)
 
     return vg_metadata
 
@@ -123,7 +123,7 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
     # Push both splits to the Hugging Face Hub
     dataset_dict = DatasetDict({"train": train_metadata, "test": test_metadata})
     dataset_dict.push_to_hub(
-        repo_id=cfg.data.vg_metadata_hf_identifier + "_for_graphormer",
+        repo_id=cfg.data.processed_hf_identifier,
     )
 
 
