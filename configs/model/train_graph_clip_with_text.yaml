@@ -27,12 +27,12 @@ training:
   batch_size: 128 # 128 for full training
   gradient_accumulation_steps: 1
   learning_rate: 1e-4
-  lr_gamma: 0.5
-  epochs: 3 # 8 times less than image, because there is 8x more data
+  lr_gamma: 0.1
+  epochs: 24
   weight_decay: 0.1
-  logging_steps: 20 # 1 step for testing, 10 for full training
-  eval_steps: 40 # 1 step for testing, 10 for full training
-  save_steps: 120
+  logging_steps: 40 # 1 step for testing, 80 for full training
+  eval_steps: 40 # 1 step for testing, 80 for full training
+  save_steps: 320
   save_total_limit: 3
 
 mlflow:

@@ -5,9 +5,11 @@ from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-from transformers import CLIPConfig, CLIPModel, CLIPTextModel, CLIPVisionModel, GraphormerModel
+from transformers import CLIPModel, CLIPTextModel, CLIPVisionModel, GraphormerModel
 from transformers.modeling_outputs import BaseModelOutputWithNoAttention, BaseModelOutputWithPooling, ModelOutput
 from transformers.models.clip.modeling_clip import clip_loss
+
+from .configuration_graph_clip import GraphCLIPConfig
 
 
 @dataclass
@@ -39,7 +41,9 @@ class GraphCLIPOutput(ModelOutput):
 
 
 class GraphCLIPModel(CLIPModel):
-    def __init__(self, config: CLIPConfig):
+    config_class = GraphCLIPConfig
+
+    def __init__(self, config: GraphCLIPConfig):
         # Specify configs
         super().__init__(config)
         graph_config = config.graph_config

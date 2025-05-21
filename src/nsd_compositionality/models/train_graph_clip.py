@@ -9,10 +9,19 @@ from omegaconf import DictConfig
 from PIL import Image
 from torch.optim import AdamW
 from torch.optim.lr_scheduler import MultiStepLR
-from transformers import CLIPConfig, CLIPProcessor, GraphormerConfig, Trainer, TrainerCallback, TrainingArguments
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    CLIPProcessor,
+    GraphormerConfig,
+    Trainer,
+    TrainerCallback,
+    TrainingArguments,
+)
 
 from nsd_compositionality.data.preprocess_graphormer import GraphCLIPDataCollator, preprocess_item
-from nsd_compositionality.models.modeling_graph_image_model import GraphCLIPModel
+from nsd_compositionality.models.graph_clip_model.configuration_graph_clip import GraphCLIPConfig
+from nsd_compositionality.models.graph_clip_model.modeling_graph_clip import GraphCLIPModel
 
 
 def preprocess_dataset(dataset, processor, cfg):
@@ -82,7 +91,7 @@ class ThreePhaseTrainingCallback(TrainerCallback):
                 )
 
 
-@hydra.main(config_path="../../../configs/model", config_name="train_graph_image_model")
+@hydra.main(config_path="../../../configs/model", config_name="train_graph_clip")
 def train_graph_image_model(cfg: DictConfig):
     # Load environment variables
     load_dotenv("../../../.env")
@@ -176,7 +185,7 @@ def train_graph_image_model(cfg: DictConfig):
                 dropout=cfg.model.dropout,
             )
 
-        config = CLIPConfig(
+        config = GraphCLIPConfig(
             graph_config=graphormer_config,
             graph_pair_type=cfg.model.model_type,
             pretrained_model_name_or_path=cfg.model.pretrained_model_name_or_path,
@@ -201,6 +210,12 @@ def train_graph_image_model(cfg: DictConfig):
             ],
             gamma=cfg.training.lr_gamma,
         )
+
+        # Register the model and config to AutoClass
+        AutoConfig.register("graph_clip", GraphCLIPConfig)
+        AutoModel.register(GraphCLIPConfig, GraphCLIPModel)
+        GraphCLIPConfig.register_for_auto_class()
+        GraphCLIPModel.register_for_auto_class("AutoModel")
 
         # Define training arguments
         training_args = TrainingArguments(
