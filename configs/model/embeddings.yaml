@@ -4,11 +4,16 @@ by_layer: true
 override: true
 
 huggingface:
-  dataset_name: "tachyongun/MS_COCO_NSD_224x224_msi"
+  image_dataset_name: "tachyongun/MS_COCO_NSD_224x224_msi"
+  text_dataset_name: "helena-balabin/vg_coco_overlap_for_graphormer"
   model_ids: ["helena-balabin/clip-graphormer_filtered_image_graphs"]
 
 data:
   large_data_path: ${oc.env:LARGE_DATA_PATH}
+  image_split: "train"
+  text_split: "test"
+  graph_column: "filtered_image_graph"
+  keep_one_caption: true
   nsd_directory: nsd
   dataset_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
   model_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
