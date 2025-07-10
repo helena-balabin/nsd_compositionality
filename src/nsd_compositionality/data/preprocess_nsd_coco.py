@@ -4,6 +4,7 @@ import logging
 from pathlib import Path
 
 import hydra
+import networkx as nx
 import pandas as pd
 from datasets import load_dataset
 from dotenv import load_dotenv
@@ -12,6 +13,41 @@ from omegaconf import DictConfig, OmegaConf
 
 logger = logging.getLogger(__name__)
 load_dotenv()
+
+
+def process_graph_properties(
+    item: dict,
+):
+    """
+    Process the graph properties of the item to get the (1) number of nodes and (2) edges and (3) depth of the graph.
+
+    Args:
+        item (dict): The item to process.
+
+    Returns:
+        dict: The processed item with graph properties.
+    """
+    # There are different columns that contain "_graphs" in their name, for each of them we will extract the properties
+    graph_columns = [col for col in item.keys() if "_graphs" in col]
+    for col in graph_columns:
+        # Get the graph data
+        graph_data = item[col]
+        n_nodes = item[col]["num_nodes"]
+        n_edges = len(graph_data["edge_index"][0])
+        if n_edges > 0:
+            G = nx.Graph()
+            G.add_nodes_from(range(graph_data["num_nodes"]))
+            G.add_edges_from(zip(*graph_data["edge_index"]))
+            lengths = nx.all_pairs_shortest_path_length(G)
+            depth = max(d for _, targets in lengths for d in targets.values())
+        else:
+            depth = 0
+        # Add the properties to the item
+        item[f"{col}_n_nodes"] = n_nodes
+        item[f"{col}_n_edges"] = n_edges
+        item[f"{col}_depth"] = depth
+
+    return item
 
 
 @hydra.main(config_path="../../../configs/data", config_name="data")
@@ -44,18 +80,25 @@ def preprocess_nsd_coco(cfg: DictConfig) -> None:
     nsd_stim_desc = pd.read_csv(nsd.stimuli_description_file, index_col=0)
     nsd_coco_ids = set(nsd_stim_desc["cocoId"].tolist())
 
-    # Load the VG metadata
+    # Load the VG metadata with specific graphs
     vg_metadata = load_dataset(
-        cfg.data.vg_metadata_hf_identifier,
+        cfg.data.processed_hf_identifier,
         cache_dir=cfg.data.cache_dir,
-        split="train",
+        split="test",
     )
+    # Optionally also process some graph properties
+    if cfg.data.process_graph_properties:
+        vg_metadata = vg_metadata.map(
+            process_graph_properties,
+            num_proc=cfg.data.num_proc,
+        )
+
     # Convert to pandas DataFrame
     vg_df = vg_metadata.to_pandas()
     # Drop duplicates based on 'cocoid'
-    vg_df_unique = vg_df.drop_duplicates(subset=["cocoid"], keep="first")
+    vg_df_unique = vg_df.drop_duplicates(subset=[cfg.data.coco_id_col], keep="first")
     # Rename the 'cocoid' column to 'cocoId'
-    vg_df_unique = vg_df_unique.rename(columns={"cocoid": "cocoId"})
+    vg_df_unique = vg_df_unique.rename(columns={cfg.data.coco_id_col: "cocoId"})
     # Get the COCO IDs from the VG metadata
     vg_coco_ids = set(vg_df_unique["cocoId"])
 

@@ -10,5 +10,7 @@ data:
   include_image_graphs: true
   include_text_graphs: false
   processed_hf_identifier: "helena-balabin/vg_actions_spatial_for_graphormer"
+  process_graph_properties: true
+  num_proc: 8
 model:
   spacy_model: "en_core_web_trf"
