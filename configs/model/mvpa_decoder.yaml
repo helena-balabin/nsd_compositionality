@@ -36,7 +36,7 @@ use_searchlight: false
 
 classifier:
   estimator: "svc"
-  scoring: "accuracy"
+  scoring: "f1_score"
   cv: 5
   n_jobs: -1
 

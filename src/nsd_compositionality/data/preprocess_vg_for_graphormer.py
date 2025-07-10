@@ -50,15 +50,20 @@ def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name
     if cfg.data.include_image_graphs:
         vg_objects_file = vg_metadata_dir / "objects.json"
         vg_relationships_file = vg_metadata_dir / "relationships.json"
-        graphs, filtered_graphs = derive_image_graphs(
+        # Visual VerbNet is from the COCO actions dataset
+        vg_visual_verbs_file = vg_metadata_dir / "visual_verbnet_beta2015.json"
+        graphs, action_graphs, spatial_graphs = derive_image_graphs(
             vg_objects_file=vg_objects_file,
             vg_relationships_file=vg_relationships_file,
+            vg_visual_verbs_file=vg_visual_verbs_file,
             image_ids=vg_metadata[cfg.data.vg_image_id_col],
         )
         graphs = [graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
-        filtered_graphs = [filtered_graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
+        action_graphs = [action_graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
+        spatial_graphs = [spatial_graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
         vg_metadata = vg_metadata.add_column(name="image_graphs", column=graphs)
-        vg_metadata = vg_metadata.add_column(name="filtered_image_graphs", column=filtered_graphs)
+        vg_metadata = vg_metadata.add_column(name="action_image_graphs", column=action_graphs)
+        vg_metadata = vg_metadata.add_column(name="spatial_image_graphs", column=spatial_graphs)
 
     # Add text graph properties if specified in the config
     if cfg.data.include_text_graphs:
@@ -130,20 +135,23 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
 def derive_image_graphs(
     vg_objects_file: str,
     vg_relationships_file: str,
+    vg_visual_verbs_file: str,
     image_ids: Optional[List[str]] = None,
-) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Get the graph data of the VG + COCO overlap dataset for the given image ids.
 
     :param vg_objects_file: Path to the file where the Visual Genome objects json is stored.
     :type vg_objects_file: str
     :param vg_relationships_file: Path to the file where the Visual Genome relationship json is stored.
     :type vg_relationships_file: str
+    :param vg_visual_verbs_file: Path to the file where the Visual VerbNet json is stored
+    :type vg_visual_verbs_file: str
     :param image_ids: Optional list of image ids to characterize the graph complexity for, defaults to None
     :type image_ids: Optional[List[str]]
     :param return_graphs: Whether to return the graphs as well, defaults to False
     :type return_graphs: bool
-    :return: Two dictionaries with the graph complexity measures and image id
-    :rtype: Tuple[Dict[str, Any], Dict[str, Any]]
+    :return: Three dictionaries with the graph complexity measures (whole graph, actions, spatial rels) and image id
+    :rtype: Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
     """
     # Load the object and relationship files from json
     vg_objects = load_dataset("json", data_files=str(vg_objects_file), split="train")
@@ -155,10 +163,15 @@ def derive_image_graphs(
             lambda x: x["image_id"] in image_ids,
             num_proc=4,
         )
+    # Load the Visual VerbNet file
+    visual_verbs_data = load_dataset("json", data_files=str(vg_visual_verbs_file), split="train")
+    visual_verbs = [entry["name"] for entry in visual_verbs_data["visual_actions"][0]]
 
     # Process each VG image/graph into a networkx graph
     graphs = {}
-    filtered_graphs = {}
+    action_graphs = {}
+    spatial_graphs = {}
+
     for obj, rel in tqdm(
         zip(vg_objects, vg_relationships),
         desc="Processing rels/objs as networkx graphs",
@@ -177,34 +190,45 @@ def derive_image_graphs(
 
         # Append the graph to the dict
         graphs[obj["image_id"]] = graph
-        # Filter for relationships that have at least one living being as subject/object
-        filtered_rels = [
+        # Filter relationships by visualactions
+        action_rels = [
             r
             for r in rel["relationships"]
             if len(r["object"]["synsets"]) > 0
             and len(r["subject"]["synsets"]) > 0
+            and len(r["synsets"]) > 0
             and (check_if_living_being(r["object"]["synsets"][0]) or check_if_living_being(r["subject"]["synsets"][0]))
+            and ".v." in r["synsets"][0]
+            and r["synsets"][0].split(".")[0] in visual_verbs
         ]
-        filtered_rel_ids = [r["relationship_id"] for r in filtered_rels]
-        filtered_edges = [
-            (u, v, data) for u, v, data in graph.edges(data=True) if data.get("rel_id") in filtered_rel_ids
-        ]
-        # Create a new graph with the filtered edges
-        filtered_graph = nx.DiGraph(filtered_edges)
-        filtered_graphs[obj["image_id"]] = filtered_graph
+        action_rel_ids = [r["relationship_id"] for r in action_rels]
+        action_edges = [(u, v, data) for u, v, data in graph.edges(data=True) if data.get("rel_id") in action_rel_ids]
+        # Create a new graph with the action edges
+        action_graph = nx.DiGraph(action_edges)
+        action_graphs[obj["image_id"]] = action_graph
+
+        # Do the same with spatial relations, i.e., if ".r." in the relationship synset
+        spatial_rels = [r for r in rel["relationships"] if len(r["synsets"]) > 0 and ".r." in r["synsets"][0]]
+        spatial_rel_ids = [r["relationship_id"] for r in spatial_rels]
+        spatial_edges = [(u, v, data) for u, v, data in graph.edges(data=True) if data.get("rel_id") in spatial_rel_ids]
+        # Create a new graph with the spatial edges
+        spatial_graph = nx.DiGraph(spatial_edges)
+        spatial_graphs[obj["image_id"]] = spatial_graph
 
     # Calculate the graphormer attributes
     graphs_graphormer = {}
-    filtered_graphs_graphormer = {}
-    for (graph_id, graph), (filtered_graph_id, filtered_graph) in tqdm(
-        zip(graphs.items(), filtered_graphs.items()),
+    action_graphs_graphormer = {}
+    spatial_graphs_graphormer = {}
+    for (graph_id, graph), (action_graph_id, action_graph), (spatial_graph_id, spatial_graph) in tqdm(
+        zip(graphs.items(), action_graphs.items(), spatial_graphs.items()),
         desc="Calculating graphormer attributes",
         total=len(graphs),
     ):
         graphs_graphormer[graph_id] = calculate_graphormer_attributes(graph)
-        filtered_graphs_graphormer[filtered_graph_id] = calculate_graphormer_attributes(filtered_graph)
+        action_graphs_graphormer[action_graph_id] = calculate_graphormer_attributes(action_graph)
+        spatial_graphs_graphormer[spatial_graph_id] = calculate_graphormer_attributes(spatial_graph)
 
-    return graphs_graphormer, filtered_graphs_graphormer
+    return graphs_graphormer, action_graphs_graphormer, spatial_graphs_graphormer
 
 
 def check_if_living_being(

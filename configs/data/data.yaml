@@ -9,6 +9,6 @@ data:
   cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
   include_image_graphs: true
   include_text_graphs: false
-  processed_hf_identifier: "helena-balabin/vg_for_graphormer"
+  processed_hf_identifier: "helena-balabin/vg_actions_spatial_for_graphormer"
 model:
   spacy_model: "en_core_web_trf"
