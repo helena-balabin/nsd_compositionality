@@ -9,7 +9,7 @@ from transformers import CLIPModel, CLIPTextModel, CLIPVisionModel, GraphormerMo
 from transformers.modeling_outputs import BaseModelOutputWithNoAttention, BaseModelOutputWithPooling, ModelOutput
 from transformers.models.clip.modeling_clip import clip_loss
 
-from .configuration_graph_clip import GraphCLIPConfig
+from nsd_compositionality.models.graph_clip_model.configuration_graph_clip import GraphCLIPConfig
 
 
 @dataclass
@@ -84,7 +84,7 @@ class GraphCLIPModel(CLIPModel):
         Args:
             input_ids (torch.LongTensor): Tokenized text input IDs.
             pixel_values (torch.FloatTensor): Batch of images.
-            graph_input (dict): Dictionary of inputs for the Graphormer encoder.
+            graph_input (dict, optional): Dictionary of inputs for the Graphormer encoder.
             attention_mask (torch.LongTensor, optional): Attention mask for the text encoder.
             position_ids (torch.LongTensor, optional): Position IDs for text encoder.
             return_loss (bool, optional): Whether to compute the contrastive loss, default is True.
@@ -119,37 +119,46 @@ class GraphCLIPModel(CLIPModel):
         text_embeds = text_outputs[1]  # Pooled output
         text_embeds = self.text_projection(text_embeds)
 
-        # Process graph input through Graphormer
-        graph_outputs = self.graph_model(
-            **graph_input,
-        )
-        # Use the special graph token for graph representation
-        graph_embeds = graph_outputs.last_hidden_state[:, 0, :]
-        graph_embeds = self.graph_projection(graph_embeds)
+        # Process graph input through Graphormer (if provided)
+        graph_outputs = None
+        graph_embeds = None
+        if graph_input is not None:
+            graph_outputs = self.graph_model(
+                **graph_input,
+            )
+            # Use the special graph token for graph representation
+            graph_embeds = graph_outputs.last_hidden_state[:, 0, :]
+            graph_embeds = self.graph_projection(graph_embeds)
 
         # Normalize the projected features
         image_embeds = image_embeds / image_embeds.norm(p=2, dim=-1, keepdim=True)
         text_embeds = text_embeds / text_embeds.norm(p=2, dim=-1, keepdim=True)
-        graph_embeds = graph_embeds / graph_embeds.norm(p=2, dim=-1, keepdim=True)
+        if graph_embeds is not None:
+            graph_embeds = graph_embeds / graph_embeds.norm(p=2, dim=-1, keepdim=True)
 
         # Compute scaled cosine similarity logits
         logit_scale = self.logit_scale.exp()
         logits_image_text = logit_scale * torch.matmul(image_embeds, text_embeds.t())
 
-        # Compute graph pair logits based on the specified pair type
-        if self.graph_pair_type == "text":
-            logits_graph_pair = logit_scale * torch.matmul(graph_embeds, text_embeds.t())
-        elif self.graph_pair_type == "image":
-            logits_graph_pair = logit_scale * torch.matmul(graph_embeds, image_embeds.t())
-        else:
-            raise ValueError("Invalid graph_pair_type. Must be 'text' or 'image'.")
+        # Compute graph pair logits based on the specified pair type (if graph input is provided)
+        logits_graph_pair = None
+        if graph_embeds is not None:
+            if self.graph_pair_type == "text":
+                logits_graph_pair = logit_scale * torch.matmul(graph_embeds, text_embeds.t())
+            elif self.graph_pair_type == "image":
+                logits_graph_pair = logit_scale * torch.matmul(graph_embeds, image_embeds.t())
+            else:
+                raise ValueError("Invalid graph_pair_type. Must be 'text' or 'image'.")
 
         loss = None
         if return_loss:
             # Compute contrastive loss for the specified pairs
             loss_image_text = clip_loss(logits_image_text)
-            loss_graph_pair = clip_loss(logits_graph_pair)
-            loss = (loss_image_text + loss_graph_pair) / 2.0
+            if logits_graph_pair is not None:
+                loss_graph_pair = clip_loss(logits_graph_pair)
+                loss = (loss_image_text + loss_graph_pair) / 2.0
+            else:
+                loss = loss_image_text
 
         if not return_dict:
             output = (

@@ -1,0 +1,36 @@
+# Configuration for compositional benchmarking evaluation
+
+# Model settings
+model_ids:
+  - "helena-balabin/clip-graphormer_filtered_image_graphs"
+  # - "openai/clip-vit-base-patch32"
+
+# Dataset settings - multiple datasets for comprehensive evaluation
+datasets:
+  - name: "winoground"
+    hf_name: "facebook/winoground"
+    split: "test"
+    max_examples: 0 # 0 means use all examples, set to positive integer to limit
+
+  - name: "svo"
+    hf_name: "yjkimstats/SVO_fmt"
+    split: "train"
+    max_examples: 0
+
+  - name: "sugarcrepe"
+    hf_name: "Mayfull/sugarcrepe_vlms"
+    split: "test"
+    max_examples: 0
+
+# Hardware settings
+device: "cuda"
+batch_size: 1 # Currently only batch_size=1 is supported
+
+# Data paths
+data:
+  dataset_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  model_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
+  output_dir: ${oc.env:LARGE_DATA_PATH}/compositional_benchmarking
+
+# Execution settings
+override: true # Set to true to recompute existing results
