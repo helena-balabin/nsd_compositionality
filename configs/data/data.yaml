@@ -12,5 +12,9 @@ data:
   processed_hf_identifier: "helena-balabin/vg_actions_spatial_for_graphormer"
   process_graph_properties: true
   num_proc: 8
+  # CLIP patch sizes to compute patch indices for
+  patch_sizes: [16, 32]
+  # Target resolution for CLIP preprocessing
+  target_resolution: 224
 model:
   spacy_model: "en_core_web_trf"

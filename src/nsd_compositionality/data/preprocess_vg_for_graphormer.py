@@ -23,6 +23,56 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 
+def map_vg_to_clip_patch(x, y, width, height, patch_size=32, target_resolution=224):
+    """
+    Map VG object coordinates to CLIP patch indices.
+
+    :param x: X coordinate of the object center in original image
+    :param y: Y coordinate of the object center in original image
+    :param width: Original image width
+    :param height: Original image height
+    :param patch_size: CLIP patch size (16 or 32)
+    :param target_resolution: Target resolution for CLIP (default 224)
+    :return: Patch index in the CLIP patch grid
+    """
+    # Step 1: Resize so that the shorter side is target_resolution (e.g. 224)
+    if width < height:
+        scale = target_resolution / width
+        new_w = target_resolution
+        new_h = int(round(height * scale))
+    else:
+        scale = target_resolution / height
+        new_h = target_resolution
+        new_w = int(round(width * scale))
+
+    # Step 2: Resize original coordinates
+    x_resized = x * scale
+    y_resized = y * scale
+
+    # Step 3: Center crop
+    left = (new_w - target_resolution) / 2
+    top = (new_h - target_resolution) / 2
+
+    x_clip = x_resized - left
+    y_clip = y_resized - top
+
+    # Step 4: Clamp to valid pixel range
+    x_clip = max(0, min(target_resolution - 1e-3, x_clip))
+    y_clip = max(0, min(target_resolution - 1e-3, y_clip))
+
+    # Step 5: Compute patch grid size (ViT expects square inputs, so grid is square)
+    num_patches_per_side = target_resolution // patch_size
+
+    # Step 6: Compute patch index (row-major order)
+    patch_x = int(x_clip // patch_size)
+    patch_y = int(y_clip // patch_size)
+
+    patch_index = patch_y * num_patches_per_side + patch_x
+
+    # Return patch index incremented by 1 to match CLIP's preceeding [CLS] token
+    return patch_index + 1
+
+
 def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name: str) -> Dict[str, Any]:
     """
     Preprocess a split of the VG metadata.
@@ -56,6 +106,8 @@ def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name
             vg_objects_file=vg_objects_file,
             vg_relationships_file=vg_relationships_file,
             vg_visual_verbs_file=vg_visual_verbs_file,
+            vg_metadata_dir=vg_metadata_dir,
+            cfg=cfg,
             image_ids=vg_metadata[cfg.data.vg_image_id_col],
         )
         graphs = [graphs[img_id] for img_id in vg_metadata[cfg.data.vg_image_id_col]]  # type: ignore
@@ -136,6 +188,8 @@ def derive_image_graphs(
     vg_objects_file: str,
     vg_relationships_file: str,
     vg_visual_verbs_file: str,
+    vg_metadata_dir: Path,
+    cfg: DictConfig,
     image_ids: Optional[List[str]] = None,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     """Get the graph data of the VG + COCO overlap dataset for the given image ids.
@@ -146,16 +200,24 @@ def derive_image_graphs(
     :type vg_relationships_file: str
     :param vg_visual_verbs_file: Path to the file where the Visual VerbNet json is stored
     :type vg_visual_verbs_file: str
+    :param vg_metadata_dir: Directory containing VG metadata files
+    :type vg_metadata_dir: Path
+    :param cfg: Configuration object containing patch sizes and target resolution
+    :type cfg: DictConfig
     :param image_ids: Optional list of image ids to characterize the graph complexity for, defaults to None
     :type image_ids: Optional[List[str]]
-    :param return_graphs: Whether to return the graphs as well, defaults to False
-    :type return_graphs: bool
     :return: Three dictionaries with the graph complexity measures (whole graph, actions, spatial rels) and image id
     :rtype: Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]
     """
     # Load the object and relationship files from json
     vg_objects = load_dataset("json", data_files=str(vg_objects_file), split="train")
     vg_relationships = load_dataset("json", data_files=str(vg_relationships_file), split="train")
+
+    # Load image metadata to get image dimensions
+    vg_image_data_file = vg_metadata_dir / "image_data.json"
+    vg_image_data = load_dataset("json", data_files=str(vg_image_data_file), split="train")
+    # Create a mapping from image_id to image dimensions
+    image_dims = {img["image_id"]: (img["width"], img["height"]) for img in vg_image_data}
     # Filter by image ids if given
     if image_ids:
         vg_objects = vg_objects.filter(lambda x: x["image_id"] in image_ids, num_proc=4)
@@ -171,30 +233,72 @@ def derive_image_graphs(
     graphs = {}
     action_graphs = {}
     spatial_graphs = {}
+    # Store object information for patch index calculation
+    object_data: dict = {}
 
     for obj, rel in tqdm(
         zip(vg_objects, vg_relationships),
         desc="Processing rels/objs as networkx graphs",
         total=len(vg_objects),
     ):
+        image_id = obj["image_id"]
+
+        # Get image dimensions for this image
+        if image_id not in image_dims:
+            logger.warning(f"No image dimensions found for image_id {image_id}, skipping")
+            continue
+        img_width, img_height = image_dims[image_id]
+
+        # Store object data for patch index calculation
+        object_data[image_id] = {}
+
         # Create the graph based on objects and relationships
         graph = nx.DiGraph()
         for o in obj["objects"]:
-            graph.add_node(o["object_id"])
+            object_id = o["object_id"]
+            graph.add_node(object_id)
+
+            # Calculate object center coordinates
+            obj_x = o["x"] + o["w"] / 2
+            obj_y = o["y"] + o["h"] / 2
+
+            # Store object information including patch indices for different patch sizes
+            patch_indices = {}
+            for patch_size in cfg.data.patch_sizes:
+                patch_idx = map_vg_to_clip_patch(
+                    obj_x,
+                    obj_y,
+                    img_width,
+                    img_height,
+                    patch_size=patch_size,
+                    target_resolution=cfg.data.target_resolution,
+                )
+                patch_indices[f"patch_{patch_size}"] = patch_idx
+
+            object_data[image_id][object_id] = {
+                "bbox": {"x": o["x"], "y": o["y"], "w": o["w"], "h": o["h"]},
+                "patch_indices": patch_indices,
+            }
+
         for r in rel["relationships"]:
-            graph.add_edge(
-                r["object"]["object_id"],
-                r["subject"]["object_id"],
-                rel_id=r["relationship_id"],
-            )
+            # If both subject and object are in obj["objects"], add the edge
+            if r["subject"]["object_id"] in graph.nodes and r["object"]["object_id"] in graph.nodes:
+                # Add the relationship as an edge with the relationship ID as an attribute
+                graph.add_edge(
+                    r["object"]["object_id"],
+                    r["subject"]["object_id"],
+                    rel_id=r["relationship_id"],
+                )
 
         # Append the graph to the dict
-        graphs[obj["image_id"]] = graph
-        # Filter relationships by visualactions
+        graphs[image_id] = graph
+        # Filter relationships by visual actions
         action_rels = [
             r
             for r in rel["relationships"]
-            if len(r["object"]["synsets"]) > 0
+            if r["subject"]["object_id"] in graph.nodes
+            and r["object"]["object_id"] in graph.nodes
+            and len(r["object"]["synsets"]) > 0
             and len(r["subject"]["synsets"]) > 0
             and len(r["synsets"]) > 0
             and (check_if_living_being(r["object"]["synsets"][0]) or check_if_living_being(r["subject"]["synsets"][0]))
@@ -203,30 +307,53 @@ def derive_image_graphs(
         ]
         action_rel_ids = [r["relationship_id"] for r in action_rels]
         action_edges = [(u, v, data) for u, v, data in graph.edges(data=True) if data.get("rel_id") in action_rel_ids]
-        # Create a new graph with the action edges
+        # Create a new graph with the action edges and only nodes that have edges
         action_graph = nx.DiGraph(action_edges)
-        action_graphs[obj["image_id"]] = action_graph
+        # Remove isolated nodes (nodes with no edges)
+        isolated_nodes = list(nx.isolates(action_graph))
+        action_graph.remove_nodes_from(isolated_nodes)
+        action_graphs[image_id] = action_graph
 
         # Do the same with spatial relations, i.e., if ".r." in the relationship synset
-        spatial_rels = [r for r in rel["relationships"] if len(r["synsets"]) > 0 and ".r." in r["synsets"][0]]
+        spatial_rels = [
+            r
+            for r in rel["relationships"]
+            if r["subject"]["object_id"] in graph.nodes
+            and r["object"]["object_id"] in graph.nodes
+            and len(r["synsets"]) > 0
+            and ".r." in r["synsets"][0]
+        ]
         spatial_rel_ids = [r["relationship_id"] for r in spatial_rels]
         spatial_edges = [(u, v, data) for u, v, data in graph.edges(data=True) if data.get("rel_id") in spatial_rel_ids]
-        # Create a new graph with the spatial edges
+        # Create a new graph with the spatial edges and only nodes that have edges
         spatial_graph = nx.DiGraph(spatial_edges)
-        spatial_graphs[obj["image_id"]] = spatial_graph
+        # Remove isolated nodes (nodes with no edges)
+        isolated_nodes = list(nx.isolates(spatial_graph))
+        spatial_graph.remove_nodes_from(isolated_nodes)
+        spatial_graphs[image_id] = spatial_graph
 
     # Calculate the graphormer attributes
     graphs_graphormer = {}
     action_graphs_graphormer = {}
     spatial_graphs_graphormer = {}
-    for (graph_id, graph), (action_graph_id, action_graph), (spatial_graph_id, spatial_graph) in tqdm(
-        zip(graphs.items(), action_graphs.items(), spatial_graphs.items()),
+    for (
+        (graph_id, graph),
+        (action_graph_id, action_graph),
+        (spatial_graph_id, spatial_graph),
+        (obj_meta_id, obj_data),
+    ) in tqdm(
+        zip(graphs.items(), action_graphs.items(), spatial_graphs.items(), object_data.items()),
         desc="Calculating graphormer attributes",
         total=len(graphs),
     ):
-        graphs_graphormer[graph_id] = calculate_graphormer_attributes(graph)
-        action_graphs_graphormer[action_graph_id] = calculate_graphormer_attributes(action_graph)
-        spatial_graphs_graphormer[spatial_graph_id] = calculate_graphormer_attributes(spatial_graph)
+        assert graph_id == action_graph_id == spatial_graph_id == obj_meta_id, "IDs in wrong order"
+        graphs_graphormer[graph_id] = calculate_graphormer_attributes(graph, obj_data, cfg.data.patch_sizes)
+        action_graphs_graphormer[action_graph_id] = calculate_graphormer_attributes(
+            action_graph, obj_data, cfg.data.patch_sizes
+        )
+        spatial_graphs_graphormer[spatial_graph_id] = calculate_graphormer_attributes(
+            spatial_graph, obj_data, cfg.data.patch_sizes
+        )
 
     return graphs_graphormer, action_graphs_graphormer, spatial_graphs_graphormer
 
@@ -262,32 +389,64 @@ def check_if_living_being(
     return wn.synset("animal.n.01") in hypernyms or wn.synset("person.n.01") in hypernyms
 
 
-def calculate_graphormer_attributes(graph: nx.Graph) -> Dict[str, Any]:
+def calculate_graphormer_attributes(
+    graph: nx.Graph,
+    object_data: Optional[Dict[int, Any]] = None,
+    patch_sizes: Optional[List[int]] = None,
+) -> Dict[str, Any]:
     """
-    Calculate the edge_index and num_nodes for a given networkx graph.
+    Calculate the edge_index, num_nodes, and patch indices for a given networkx graph.
 
     :param graph: The input graph
     :type graph: nx.Graph
-    :return: A dictionary containing edge_index and num_nodes
+    :param object_data: Dictionary containing object information including patch indices
+    :type object_data: Optional[Dict[int, Any]]
+    :param patch_sizes: List of patch sizes to include in output
+    :type patch_sizes: Optional[List[int]]
+    :return: A dictionary containing edge_index, num_nodes, and patch indices
     :rtype: Dict[str, Any]
     """
+    # Store original nodes before relabeling
+    original_nodes = list(graph.nodes())
+
     # Create a mapping from original node IDs to sequential IDs starting from 0
-    node_mapping = {node: idx for idx, node in enumerate(graph.nodes())}
+    node_mapping = {node: idx for idx, node in enumerate(original_nodes)}
 
     # Relabel the nodes in the graph using the mapping
-    graph = nx.relabel_nodes(graph, node_mapping)
+    relabeled_graph = nx.relabel_nodes(graph, node_mapping)
 
     # Convert edge_index to a 2 x n_edges format
-    edge_index = [[u, v] for u, v in list(graph.edges())]
+    edge_index = [[u, v] for u, v in list(relabeled_graph.edges())]
     edge_index = list(map(list, zip(*edge_index)))  # Transpose to 2 x n_edges format
     # If there are no edges, create an empty edge_index
     if len(edge_index) == 0:
         edge_index = [[], []]
 
     # Get the number of nodes
-    num_nodes = graph.number_of_nodes()
+    num_nodes = relabeled_graph.number_of_nodes()
 
-    return {"edge_index": edge_index, "num_nodes": num_nodes}
+    result = {"edge_index": edge_index, "num_nodes": num_nodes}
+
+    # Add patch indices if object data is provided
+    if object_data and patch_sizes:
+        # Create patch indices arrays for each patch size
+        for patch_size in patch_sizes:
+            patch_key = f"patch_{patch_size}"
+            patch_indices = []
+
+            # Get patch indices for nodes in their original order (before relabel)
+            # This maintains the same order as the relabeled node indices
+            for node_id in original_nodes:
+                if node_id in object_data and patch_key in object_data[node_id]["patch_indices"]:
+                    patch_indices.append(object_data[node_id]["patch_indices"][patch_key])
+                else:
+                    # Use -1 as a placeholder for missing patch data to maintain array length
+                    logger.warning(f"Missing patch data for node {node_id}, patch size {patch_size}, using -1")
+                    patch_indices.append(-1)
+
+            result[f"patch_indices_{patch_size}"] = patch_indices
+
+    return result
 
 
 def tree_to_graph(tree, start_index: int = 0) -> Tuple[nx.DiGraph, int]:
@@ -359,7 +518,10 @@ def derive_text_graphs(
     # Set the AMR extension
     amrlib.setup_spacy_extension()
     # Disable unnecessary components
-    nlp = spacy.load(spacy_model, disable=["tok2vec", "attribute_ruler", "lemmatizer", "ner", "tagger"])
+    nlp = spacy.load(
+        spacy_model,
+        disable=["tok2vec", "attribute_ruler", "lemmatizer", "ner", "tagger"],
+    )
     nlp.add_pipe("force_single_sentence", before="parser")
 
     amr_graphs = {}
