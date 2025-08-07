@@ -752,10 +752,6 @@ def run_visual_structural_probe(cfg: DictConfig) -> None:
             valid_images = []
             valid_patch_indices = []
 
-            # TODO remove
-            # Take a subset of vg_dataset for faster processing
-            vg_dataset = vg_dataset.select([i for i in list(range(100))])
-
             for i, sample in enumerate(tqdm(vg_dataset, desc=f"Filtering {graph_type} samples")):
                 graph_structure = sample.get(graph_type)
                 if not graph_structure or graph_structure.get("num_nodes", 0) == 0:
