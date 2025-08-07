@@ -7,6 +7,10 @@ data:
   data_type: betas_fithrf_GLMdenoise_RR
   output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/neural_encoder
   embedding_dir: ${oc.env:LARGE_DATA_PATH}/nsd/image_embeddings
+  # Data caching settings
+  use_cached_betas: true # Enable/disable beta caching
+  force_reload_cache: false # Force regeneration of cached betas
+  betas_cache_dir: ${oc.env:LARGE_DATA_PATH}/nsd/cache
 
 by_layer: true
 ridge_cv: false

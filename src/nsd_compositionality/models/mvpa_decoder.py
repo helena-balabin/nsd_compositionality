@@ -10,11 +10,17 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
+from himalaya.ridge import Ridge
 from nilearn.decoding import Decoder, SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
-from scipy.stats import zscore
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import StratifiedGroupKFold
+
+from nsd_compositionality.utils.nsd_data_utils import (
+    get_trial_info_for_subject,
+    load_betas_original_method,
+    load_or_create_cached_betas,
+)
 
 os.environ["PYTHONWARNINGS"] = "ignore"
 
@@ -48,71 +54,55 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
         ]
     )
 
-    # Initialize the CV
-    cv = StratifiedKFold(n_splits=cfg.classifier.cv, shuffle=True, random_state=cfg.random_state)
-
     # Process each subject
     for subject in cfg.subjects:
         logger.info(f"Processing subject {subject}")
 
-        # Get betas for all sessions for the subject
-        all_betas = []
-        for session in range(1, cfg.max_sessions + 1):
-            session_betas = nsd.read_betas(
-                subject, session_index=session, data_format=cfg.data.data_format, data_type=cfg.data.data_type
+        # Load or create cached betas
+        if cfg.data.use_cached_betas:
+            betas, brain_mask, metadata = load_or_create_cached_betas(
+                nsd=nsd,
+                subject=subject,
+                max_sessions=cfg.max_sessions,
+                data_format=cfg.data.data_format,
+                data_type=cfg.data.data_type,
+                cache_dir=Path(cfg.data.betas_cache_dir),
+                force_reload=cfg.data.force_reload_cache,
             )
-            # z-scoring of session-betas along the last axis (i.e., for each voxel across trials within a session)
-            session_betas = zscore(session_betas, axis=-1)
-            # In full float64 precision, each session requires 3.9GB of memory,
-            # so instead: cast to smaller data type (0.98GB)
-            session_betas = session_betas.astype(np.float16)
-            # Replace NaNs with 0s (that may result from dividing by 0)
-            # If there is no variance in a voxel across trials, then we're not interested in it anyways
-            session_betas = np.nan_to_num(session_betas)
-            all_betas.append(session_betas)
+            # Get affine and header from metadata
+            affine = np.array(metadata["affine"])
+            header = nsd.affine_header(subject, data_format=cfg.data.data_format)[1]
+            successful_sessions = metadata.get("successful_sessions", None)
+        else:
+            # Original data loading method (fallback)
+            betas, affine, header, brain_mask = load_betas_original_method(
+                nsd=nsd,
+                subject=subject,
+                max_sessions=cfg.max_sessions,
+                data_format=cfg.data.data_format,
+                data_type=cfg.data.data_type,
+            )
+            successful_sessions = None  # Not tracked in original method
 
-        # Concatenate all betas
-        betas = np.concatenate(all_betas, axis=-1)
-        # Get affine and header from NSD
-        affine, header = nsd.affine_header(subject, data_format=cfg.data.data_format)
+        # Get trial info for the subject using the utility function
+        trial_info_short = get_trial_info_for_subject(nsd_vg_metadata, subject, betas.shape, successful_sessions)
 
-        # Create mask of non-zero voxels (across all trials)
-        brain_mask = (np.abs(betas).sum(axis=-1) > 0).astype(np.int32)
-
-        # Get trial info for the subject based on nsd_vg_metadata
-        subject_num = subject.replace("subj0", "subject")
-        trial_info = nsd_vg_metadata[nsd_vg_metadata[subject_num] > 0]
-
-        # Instead of three separate rep columns, the dataframe should become a long
-        # one with a column for all reps
-        trial_info = trial_info.melt(
-            id_vars=[col for col in trial_info.columns if "subject" not in col],
-            value_vars=[f"{subject_num}_rep0", f"{subject_num}_rep1", f"{subject_num}_rep2"],
-            var_name="rep",
-            value_name="trial_index",
-        )
-
-        # Remove all entries in the trial_index column larger than the number of
-        # trials (betas.shape[-1])
-        trial_info_short = trial_info[trial_info["trial_index"] < betas.shape[-1]]
-        # Sort by trial_index
-        trial_info_short = trial_info_short.sort_values(by="trial_index").reset_index(drop=True)
+        # Validate trial indices before extraction
+        max_trial_index = trial_info_short["trial_index"].max()
+        if max_trial_index >= betas.shape[-1]:
+            logger.error(
+                f"Subject {subject}: Maximum trial index ({max_trial_index}) exceeds "
+                f"available trials ({betas.shape[-1]}). Check session loading."
+            )
+            raise ValueError(f"Trial index mismatch for {subject}")
 
         # Extract features and apply mask
         X = betas[:, :, :, trial_info_short["trial_index"].values - 1]
 
-        # Average betas by cocoId
-        unique_coco_ids = trial_info_short["cocoId"].unique()
-        X_aggregated_list = []
-        for c_id in unique_coco_ids:
-            idx = trial_info_short.index[trial_info_short["cocoId"] == c_id].tolist()
-            X_agg = X[..., idx].mean(axis=-1)
-            X_aggregated_list.append(X_agg)
+        logger.info(f"Subject {subject}: Extracted {X.shape[-1]} trials from betas with shape {betas.shape}")
 
-        X_aggregated = np.stack(X_aggregated_list, axis=-1)
-
-        # Convert averaged data and mask to nifti for searchlight and nilearn decoder
-        X = nib.Nifti1Image(X_aggregated, affine=affine, header=header)
+        # Convert data to nifti for searchlight and nilearn decoder
+        X = nib.Nifti1Image(X, affine=affine, header=header)
         # Create a whole-brain mask as a start
         mask_img = nib.Nifti1Image(brain_mask, affine=affine, header=header)
 
@@ -125,6 +115,27 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             atlas_results[atlas_results == -1] = 0
             # Create a nifti image from the atlas results
             mask_img = nib.Nifti1Image(atlas_results, affine=affine, header=header)
+        elif cfg.snr_mask:
+            # Use the SNR mask
+            snr_mask_path = (
+                Path(cfg.data.large_data_path)
+                / cfg.data.nsd_directory
+                / "nsddata_betas"
+                / "ppdata"
+                / subject
+                / cfg.data.data_format
+                / cfg.data.data_type
+                / "ncsnr.nii.gz"
+            )
+            snr_mask_img = nib.load(snr_mask_path)
+            # Convert SNR values to actual noise ceilings
+            snr_mask_data = snr_mask_img.get_fdata()
+            # Use the formula from the NSD data manual
+            nc_mask_data = snr_mask_data**2 / (snr_mask_data**2 + 1 / 3)  # Convert SNR to noise ceiling
+            # Threshold the SNR mask
+            nc_mask_data[nc_mask_data < cfg.snr_mask_threshold] = 0
+            nc_mask_data[nc_mask_data >= cfg.snr_mask_threshold] = 1
+            mask_img = nib.Nifti1Image(nc_mask_data, affine=snr_mask_img.affine, header=snr_mask_img.header)
 
         # Process each target variable (graph measure)
         for target_variable in cfg.target_variables:
@@ -135,37 +146,35 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
                 trial_info_short[target_variable] = (trial_info_short[target_variable] > median).astype(int)
             y = trial_info_short[target_variable].values
 
-            # Aggregated data for the target variable
-            y_aggregated_list = []
-            for c_id in unique_coco_ids:
-                idx = trial_info_short.index[trial_info_short["cocoId"] == c_id].tolist()
-                y_agg = y[idx].mean()  # Mean of the same value -> same value
-                y_aggregated_list.append(y_agg)
+            # Use cocoId as groups to ensure repetitions of the same stimulus stay together
+            groups = trial_info_short["cocoId"].values
 
-            y = np.array(y_aggregated_list)
+            # Create a list of train/test splits using GroupKFold
+            group_cv = StratifiedGroupKFold(n_splits=cfg.classifier.cv)
+            cv_splits = list(group_cv.split(X=np.zeros(len(y)), y=y, groups=groups))
 
             # Use either a searchlight or a classic decoder on all voxels
+            # Note that the classifier can also be a regressor
             if cfg.use_searchlight:
                 classifier = SearchLight(
                     mask_img=mask_img,
                     radius=cfg.searchlight.radius,
-                    estimator=cfg.classifier.estimator,
+                    estimator=Ridge() if cfg.classifier.estimator == "ridge" else cfg.classifier.estimator,
                     n_jobs=cfg.classifier.n_jobs,
                     scoring=cfg.classifier.scoring,
-                    verbose=1,
-                    cv=cv,
+                    cv=cv_splits,
                 )
             else:
                 classifier = Decoder(
                     mask=mask_img,
-                    estimator=cfg.classifier.estimator,
+                    estimator=Ridge() if cfg.classifier.estimator == "ridge" else cfg.classifier.estimator,
                     n_jobs=cfg.classifier.n_jobs,
                     scoring=cfg.classifier.scoring,
-                    cv=cv,
-                    verbose=1,
+                    cv=cv_splits,
                 )
 
             # Fit searchlight or decoder
+            # Note: nilearn handles cross-validation internally using the provided cv_splits
             classifier.fit(X, y)
             # Write results to the DataFrame
             if cfg.use_searchlight:
@@ -182,7 +191,6 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
                             {
                                 "subject": subject,
                                 "target_variable": target_variable,
-                                # Use the results from the positive class
                                 f"{cfg.classifier.scoring}_mean": mean,
                                 f"{cfg.classifier.scoring}_std": std,
                             }

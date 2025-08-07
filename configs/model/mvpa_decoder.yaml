@@ -5,12 +5,17 @@ data:
   data_format: func1pt8mm
   data_type: betas_fithrf_GLMdenoise_RR
   output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
+  loading_n_jobs: 10
+  # Data caching settings
+  use_cached_betas: true # Enable/disable beta caching
+  force_reload_cache: false # Force regeneration of cached betas
+  betas_cache_dir: ${oc.env:LARGE_DATA_PATH}/nsd/cache
 
 subjects:
   [
+    "subj03",
     "subj01",
     "subj02",
-    "subj03",
     "subj04",
     "subj05",
     "subj06",
@@ -19,28 +24,31 @@ subjects:
   ]
 max_sessions: 40
 random_state: 42
-binarize_target: true
+binarize_target: false
 target_variables:
   [
-    "sg_filtered_depth",
-    "n_filtered_rel",
-    "sg_depth",
-    "n_rel",
-    "n_obj",
-    "avg_node_degree",
-    "avg_node_connectivity",
-    "avg_clustering_coefficient",
+    "image_graphs_n_nodes",
+    "image_graphs_n_edges",
+    "image_graphs_depth",
+    "spatial_image_graphs_n_nodes",
+    "spatial_image_graphs_n_edges",
+    "spatial_image_graphs_depth",
+    "action_image_graphs_n_nodes",
+    "action_image_graphs_n_edges",
+    "action_image_graphs_depth",
   ]
 
-use_searchlight: false
+use_searchlight: true
 
 classifier:
-  estimator: "svc"
-  scoring: "f1_score"
-  cv: 5
+  estimator: "ridge"
+  scoring: "r2"
+  cv: 3
   n_jobs: -1
 
 searchlight:
   radius: 3
 
-nsdgeneral_mask: true
+nsdgeneral_mask: false
+snr_mask: true
+snr_mask_threshold: 0.2

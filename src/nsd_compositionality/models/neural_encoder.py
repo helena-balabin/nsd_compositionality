@@ -12,11 +12,16 @@ from dotenv import load_dotenv
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
 from scipy.spatial.distance import cosine
-from scipy.stats import zscore
 from sklearn.linear_model import Ridge, RidgeCV
 from sklearn.model_selection import KFold
 from tqdm import tqdm
 from transformers import CLIPVisionConfig, ViTConfig
+
+from nsd_compositionality.utils.nsd_data_utils import (
+    get_trial_info_for_subject,
+    load_betas_original_method,
+    load_or_create_cached_betas,
+)
 
 os.environ["PYTHONWARNINGS"] = "ignore"
 
@@ -108,41 +113,45 @@ def run_neural_encoder(cfg: DictConfig) -> None:
     for subject in cfg.subjects:
         logger.info(f"Processing subject {subject}")
 
-        all_betas = []
-        # Gather data from all sessions
-        for session in range(1, cfg.max_sessions + 1):
-            # TODO try catch FileNotFoundError and append empty array
-            # TODO Also make sure to leave out those trials in the metadata
-            session_betas = nsd.read_betas(
-                subject,
-                session_index=session,
+        # Load or create cached betas
+        if cfg.data.use_cached_betas:
+            betas, _, metadata = load_or_create_cached_betas(
+                nsd=nsd,
+                subject=subject,
+                max_sessions=cfg.max_sessions,
+                data_format=cfg.data.data_format,
+                data_type=cfg.data.data_type,
+                cache_dir=Path(cfg.data.betas_cache_dir),
+                force_reload=cfg.data.force_reload_cache,
+            )
+            successful_sessions = metadata.get("successful_sessions", None)
+        else:
+            # Original data loading method (fallback)
+            betas, _, _, _ = load_betas_original_method(
+                nsd=nsd,
+                subject=subject,
+                max_sessions=cfg.max_sessions,
                 data_format=cfg.data.data_format,
                 data_type=cfg.data.data_type,
             )
-            session_betas = zscore(session_betas, axis=-1)
-            session_betas = session_betas.astype(np.float16)
-            session_betas = np.nan_to_num(session_betas)
-            all_betas.append(session_betas)
+            successful_sessions = None  # Not tracked in original method
 
-        # Full data for subject
-        betas = np.concatenate(all_betas, axis=-1)
+        # Get trial info for the subject using the utility function
+        trial_info_short = get_trial_info_for_subject(nsd_vg_metadata, subject, betas.shape, successful_sessions)
 
-        subject_num = subject.replace("subj0", "subject")
-        trial_info = nsd_vg_metadata[nsd_vg_metadata[subject_num] > 0]
-
-        # Unpivot to get trial_index
-        trial_info = trial_info.melt(
-            id_vars=[c for c in trial_info.columns if "subject" not in c],
-            value_vars=[f"{subject_num}_rep0", f"{subject_num}_rep1", f"{subject_num}_rep2"],
-            var_name="rep",
-            value_name="trial_index",
-        )
-
-        trial_info_short = trial_info[trial_info["trial_index"] < betas.shape[-1]]
-        trial_info_short = trial_info_short.sort_values(by="trial_index").reset_index(drop=True)
+        # Validate trial indices before extraction
+        max_trial_index = trial_info_short["trial_index"].max()
+        if max_trial_index >= betas.shape[-1]:
+            logger.error(
+                f"Subject {subject}: Maximum trial index ({max_trial_index}) exceeds "
+                f"available trials ({betas.shape[-1]}). Check session loading."
+            )
+            raise ValueError(f"Trial index mismatch for {subject}")
 
         # Extract betas for valid trials
         Y = betas[:, :, :, trial_info_short["trial_index"].values - 1]
+
+        logger.info(f"Subject {subject}: Extracted {Y.shape[-1]} trials from betas with shape {betas.shape}")
         # Use the nsdgeneral mask
         if cfg.nsdgeneral_mask:
             # Use a much smaller mask in the subject native space
@@ -169,7 +178,6 @@ def run_neural_encoder(cfg: DictConfig) -> None:
         for model_id in cfg.model_ids:
             # Define layers to use
             if cfg.by_layer:
-                # TODO use both text and image embeddings?
                 if "clip" in model_id.lower():
                     n_layers = CLIPVisionConfig.from_pretrained(model_id).num_hidden_layers
                 else:
