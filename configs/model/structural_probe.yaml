@@ -1,0 +1,47 @@
+data:
+  large_data_path: ${oc.env:LARGE_DATA_PATH}
+  model_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
+  dataset_cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  # Option 1: Use HuggingFace Visual Genome images dataset (recommended)
+  # vg_image_dataset_hf_identifier: "ranjaykrishna/visual_genome"
+  # vg_image_dataset_hf_config: "objects_v1.2.0"
+  # Option 2: Use local image directory (alternative to HuggingFace dataset)
+  # Uncomment the line below and comment out the HuggingFace options above to use local files
+  vg_image_dir: "${oc.env:LARGE_DATA_PATH}/vg/VG_100K"
+  processed_hf_identifier: "helena-balabin/vg_actions_spatial_for_graphormer"
+  split: "test"
+  output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/visual_structural_probe
+
+model_ids:
+  - "openai/clip-vit-base-patch32"
+  - "helena-balabin/clip-graphormer_filtered_image_graphs"
+
+patch_sizes:
+  - 32
+
+# Training configuration
+training:
+  learning_rate: 0.001
+  num_epochs: 50
+
+# Probe configuration
+probe_types: ["complexity", "visual_structure"] # Types of probes to train
+probe_rank: 64 # Rank of the structural probe matrix (0 for full rank)
+by_layer: true # Whether to probe each layer separately
+device: "cuda" # Device to use for training
+
+# Cross-validation
+cv: 5
+random_state: 42
+
+# Graph types to analyze (will use all available in the dataset)
+graph_types:
+  - "image_graphs" # Full scene graphs
+  - "action_image_graphs" # Action-only relationships
+  - "spatial_image_graphs" # Spatial-only relationships
+
+# Properties to predict with complexity probe
+graph_properties:
+  - "num_nodes" # Number of objects
+  - "num_edges" # Number of relationships
+  - "depth" # Graph depth (longest shortest path)
