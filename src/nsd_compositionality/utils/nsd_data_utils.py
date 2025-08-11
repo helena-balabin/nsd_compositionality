@@ -10,6 +10,32 @@ from scipy.stats import zscore
 logger = logging.getLogger(__name__)
 
 
+def safe_zscore(data, axis=-1, epsilon=1e-9):
+    """Calculate z-score, handling near-zero standard deviation and NaNs.
+
+    This function suppresses runtime warnings for division by zero, as these
+    cases are handled explicitly by the `np.where` condition.
+
+    Args:
+        data (np.ndarray): Input data.
+        axis (int): The axis along which to operate.
+        epsilon (float): Small value to avoid division by zero.
+
+    Returns:
+        np.ndarray: Z-scored data.
+    """
+    with np.errstate(divide="ignore", invalid="ignore"):
+        mean = np.nanmean(data, axis=axis, keepdims=True)
+        std = np.nanstd(data, axis=axis, keepdims=True)
+
+        # Where std is close to zero or NaN, z-score should be 0.
+        # The division is evaluated before the where, causing a benign warning.
+        # We suppress the warning and let np.where select the correct value.
+        z_scored_data = np.where(np.isnan(std) | (std < epsilon), 0.0, (data - mean) / std)
+
+    return z_scored_data
+
+
 def load_or_create_cached_betas(nsd, subject, max_sessions, data_format, data_type, cache_dir, force_reload=False):
     """Load cached preprocessed betas or create them if they don't exist.
 
@@ -23,7 +49,7 @@ def load_or_create_cached_betas(nsd, subject, max_sessions, data_format, data_ty
         force_reload: Whether to force reloading even if cache exists
 
     Returns:
-        tuple: (betas, brain_mask, metadata)
+        tuple: (betas, metadata)
     """
     cache_dir = Path(cache_dir) / "nsd_betas_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -42,11 +68,8 @@ def load_or_create_cached_betas(nsd, subject, max_sessions, data_format, data_ty
             with open(metadata_path, "r") as f:
                 metadata = json.load(f)
 
-            # Create brain mask
-            brain_mask = (np.abs(betas).sum(axis=-1) > 0).astype(np.int32)
-
             logger.info(f"Loaded cached betas with shape {betas.shape}")
-            return betas, brain_mask, metadata
+            return betas, metadata
 
         except Exception as e:
             logger.warning(f"Failed to load cached data: {e}. Regenerating...")
@@ -84,23 +107,13 @@ def load_or_create_cached_betas(nsd, subject, max_sessions, data_format, data_ty
                 run_data = session_betas[:, :, :, start_idx:end_idx]
 
                 # Z-score within this run
-                run_data_zscore = zscore(run_data, axis=-1)
-                run_data_zscore = np.nan_to_num(run_data_zscore)
+                run_data_zscore = safe_zscore(run_data, axis=-1)
 
                 # Put it back
                 session_betas[:, :, :, start_idx:end_idx] = run_data_zscore
 
                 # Update current index for next run
                 current_idx = end_idx
-
-            # Handle any remaining trials (shouldn't happen if trial counts are correct)
-            if current_idx < total_trials:
-                remaining_trials = total_trials - current_idx
-                logger.warning(f"Session {session}: {remaining_trials} remaining trials after all runs")
-                remaining_data = session_betas[:, :, :, current_idx:]
-                remaining_data_zscore = zscore(remaining_data, axis=-1)
-                remaining_data_zscore = np.nan_to_num(remaining_data_zscore)
-                session_betas[:, :, :, current_idx:] = remaining_data_zscore
 
             session_betas = session_betas.astype(np.float16)
 
@@ -132,8 +145,6 @@ def load_or_create_cached_betas(nsd, subject, max_sessions, data_format, data_ty
     betas = np.concatenate(all_betas, axis=-1)
     # Get affine and header from NSD
     affine, _ = nsd.affine_header(subject, data_format=data_format)
-    # Create brain mask
-    brain_mask = (np.abs(betas).sum(axis=-1) > 0).astype(np.int32)
 
     # Prepare metadata
     metadata = {
@@ -161,7 +172,7 @@ def load_or_create_cached_betas(nsd, subject, max_sessions, data_format, data_ty
         json.dump(metadata, f, indent=2)
 
     logger.info(f"Created cached betas with shape {betas.shape}")
-    return betas, brain_mask, metadata
+    return betas, metadata
 
 
 def load_betas_original_method(nsd, subject, max_sessions, data_format, data_type):
@@ -175,7 +186,7 @@ def load_betas_original_method(nsd, subject, max_sessions, data_format, data_typ
         data_type: Data type
 
     Returns:
-        tuple: (betas, affine, header, brain_mask)
+        tuple: (betas, affine, header)
     """
     logger.info("Using original data loading (caching disabled)")
     all_betas = []
@@ -240,10 +251,7 @@ def load_betas_original_method(nsd, subject, max_sessions, data_format, data_typ
     # Get affine and header from NSD
     affine, header = nsd.affine_header(subject, data_format=data_format)
 
-    # Create mask of non-zero voxels (across all trials)
-    brain_mask = (np.abs(betas).sum(axis=-1) > 0).astype(np.int32)
-
-    return betas, affine, header, brain_mask
+    return betas, affine, header
 
 
 def get_trial_info_for_subject(nsd_vg_metadata, subject, betas_shape, successful_sessions=None):

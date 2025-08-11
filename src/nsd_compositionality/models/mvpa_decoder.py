@@ -10,11 +10,12 @@ import nibabel as nib
 import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from himalaya.ridge import Ridge
 from nilearn.decoding import Decoder, SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
+from sklearn.linear_model import RidgeCV
 from sklearn.model_selection import StratifiedGroupKFold
+from tqdm import tqdm
 
 from nsd_compositionality.utils.nsd_data_utils import (
     get_trial_info_for_subject,
@@ -60,7 +61,7 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
 
         # Load or create cached betas
         if cfg.data.use_cached_betas:
-            betas, brain_mask, metadata = load_or_create_cached_betas(
+            betas, metadata = load_or_create_cached_betas(
                 nsd=nsd,
                 subject=subject,
                 max_sessions=cfg.max_sessions,
@@ -75,7 +76,7 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             successful_sessions = metadata.get("successful_sessions", None)
         else:
             # Original data loading method (fallback)
-            betas, affine, header, brain_mask = load_betas_original_method(
+            betas, affine, header = load_betas_original_method(
                 nsd=nsd,
                 subject=subject,
                 max_sessions=cfg.max_sessions,
@@ -84,6 +85,8 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             )
             successful_sessions = None  # Not tracked in original method
 
+        # TODO the results don't make any sense, so let's see what needs to be changed
+        # Create brain mask (separate from caching for flexibility)
         # Get trial info for the subject using the utility function
         trial_info_short = get_trial_info_for_subject(nsd_vg_metadata, subject, betas.shape, successful_sessions)
 
@@ -99,12 +102,10 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
         # Extract features and apply mask
         X = betas[:, :, :, trial_info_short["trial_index"].values - 1]
 
-        logger.info(f"Subject {subject}: Extracted {X.shape[-1]} trials from betas with shape {betas.shape}")
+        logger.info(f"Subject {subject}: Extracted {X.shape[-1]} trials the whole dataset of shape {betas.shape}")
 
         # Convert data to nifti for searchlight and nilearn decoder
         X = nib.Nifti1Image(X, affine=affine, header=header)
-        # Create a whole-brain mask as a start
-        mask_img = nib.Nifti1Image(brain_mask, affine=affine, header=header)
 
         # Use the nsdgeneral mask
         if cfg.nsdgeneral_mask:
@@ -136,9 +137,23 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             nc_mask_data[nc_mask_data < cfg.snr_mask_threshold] = 0
             nc_mask_data[nc_mask_data >= cfg.snr_mask_threshold] = 1
             mask_img = nib.Nifti1Image(nc_mask_data, affine=snr_mask_img.affine, header=snr_mask_img.header)
+        else:
+            # Throw an error if no mask is specified
+            raise ValueError(
+                "No brain mask specified. Please set either nsdgeneral_mask or snr_mask in the configuration."
+            )
+        # Log the number of voxels in the mask
+        logger.info(
+            f"Subject {subject}: Using nsdgeneral mask with {np.sum(atlas_results > 0)} voxels "
+            f"out of {atlas_results.size} total voxels."
+        )
 
         # Process each target variable (graph measure)
-        for target_variable in cfg.target_variables:
+        for target_variable in tqdm(
+            cfg.target_variables,
+            desc=f"Processing target variables for subject {subject}",
+            total=len(cfg.target_variables),
+        ):
             # Define the target variable
             if cfg.binarize_target:
                 # Binarize the target into "high" and "low" depending on half between min and max
@@ -159,18 +174,28 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
                 classifier = SearchLight(
                     mask_img=mask_img,
                     radius=cfg.searchlight.radius,
-                    estimator=Ridge() if cfg.classifier.estimator == "ridge" else cfg.classifier.estimator,
+                    estimator=(
+                        RidgeCV(alphas=[0.1, 1, 10], cv=cfg.classifier.cv)
+                        if cfg.classifier.estimator == "ridge"
+                        else cfg.classifier.estimator
+                    ),
                     n_jobs=cfg.classifier.n_jobs,
                     scoring=cfg.classifier.scoring,
                     cv=cv_splits,
+                    verbose=1,
                 )
             else:
                 classifier = Decoder(
                     mask=mask_img,
-                    estimator=Ridge() if cfg.classifier.estimator == "ridge" else cfg.classifier.estimator,
+                    estimator=(
+                        RidgeCV(alphas=[0.1, 1, 10], cv=cfg.classifier.cv)
+                        if cfg.classifier.estimator == "ridge"
+                        else cfg.classifier.estimator
+                    ),
                     n_jobs=cfg.classifier.n_jobs,
                     scoring=cfg.classifier.scoring,
                     cv=cv_splits,
+                    verbose=1,
                 )
 
             # Fit searchlight or decoder
