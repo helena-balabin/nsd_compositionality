@@ -6,6 +6,7 @@ from pathlib import Path
 
 import hydra
 import nibabel as nib
+from dotenv import load_dotenv
 from nilearn.datasets import load_fsaverage, load_fsaverage_data, load_mni152_template
 from nilearn.plotting import plot_surf_stat_map
 from nilearn.surface import SurfaceImage
@@ -13,6 +14,8 @@ from nsdcode import NSDmapdata
 from omegaconf import DictConfig
 
 logger = logging.getLogger(__name__)
+
+load_dotenv()
 
 
 @hydra.main(config_path="../../../configs/visualization", config_name="mvpa_decoder_weights")
@@ -30,7 +33,7 @@ def run_visualization(cfg: DictConfig) -> None:
     # Iterate through all target variables
     for target_variable in cfg.target_variables:
         # Load decoder weights
-        weight_files = list(Path(cfg.data.input_dir).glob(f"*{target_variable}*searchlight*.nii.gz"))
+        weight_files = list(Path(cfg.data.input_dir).glob(f"subj*_{target_variable}*searchlight*.nii.gz"))
         logger.info(f"Found {len(weight_files)} weight files")
 
         for weight_file in weight_files:

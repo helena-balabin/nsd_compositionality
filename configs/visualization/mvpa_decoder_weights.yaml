@@ -6,7 +6,7 @@ data:
 
 visualization:
   colormap: "cold_hot"
-  threshold: 0.01
+  threshold: 0.5
   engine: "plotly"
 
 mapping:
@@ -16,10 +16,13 @@ mapping:
 
 target_variables:
   [
-    "sg_filtered_depth",
-    "n_filtered_rel",
-    "n_obj",
-    "avg_node_degree",
-    "avg_node_connectivity",
-    "avg_clustering_coefficient",
+    "image_graphs_n_edges",
+    "image_graphs_n_nodes",
+    "image_graphs_depth",
+    "spatial_image_graphs_n_edges",
+    "spatial_image_graphs_depth",
+    "spatial_image_graphs_n_nodes",
+    "action_image_graphs_n_edges",
+    "action_image_graphs_depth",
+    "action_image_graphs_n_nodes",
   ]

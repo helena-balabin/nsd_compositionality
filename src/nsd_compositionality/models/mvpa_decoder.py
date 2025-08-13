@@ -13,8 +13,8 @@ from dotenv import load_dotenv
 from nilearn.decoding import Decoder, SearchLight
 from nsd_access import NSDAccess
 from omegaconf import DictConfig
-from sklearn.linear_model import RidgeCV
-from sklearn.model_selection import StratifiedGroupKFold
+from sklearn.linear_model import RidgeClassifierCV, RidgeCV
+from sklearn.model_selection import GroupKFold, StratifiedGroupKFold
 from tqdm import tqdm
 
 from nsd_compositionality.utils.nsd_data_utils import (
@@ -108,7 +108,31 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
         X = nib.Nifti1Image(X, affine=affine, header=header)
 
         # Use the nsdgeneral mask
-        if cfg.nsdgeneral_mask:
+        if cfg.nsdgeneral_mask and cfg.snr_mask:
+            # Combine both masks: nsdgeneral AND high SNR
+            # Get nsdgeneral mask
+            atlas_results = nsd.read_atlas_results(subject, data_format=cfg.data.data_format, atlas="nsdgeneral")[0]
+            atlas_results[atlas_results == -1] = 0
+            nsdgeneral_mask = atlas_results > 0
+            # Get SNR mask
+            snr_mask_path = (
+                Path(cfg.data.large_data_path)
+                / cfg.data.nsd_directory
+                / "nsddata_betas"
+                / "ppdata"
+                / subject
+                / cfg.data.data_format
+                / cfg.data.data_type
+                / "ncsnr.nii.gz"
+            )
+            snr_mask_img = nib.load(snr_mask_path)
+            snr_mask_data = snr_mask_img.get_fdata()
+            nc_mask_data = snr_mask_data**2 / (snr_mask_data**2 + 1 / 3)
+            snr_mask = nc_mask_data >= cfg.snr_mask_threshold
+            # Combine masks (intersection)
+            combined_mask = nsdgeneral_mask & snr_mask
+            mask_img = nib.Nifti1Image(combined_mask.astype(int), affine=affine, header=header)
+        elif cfg.nsdgeneral_mask:
             # Use a much smaller mask in the subject native space
             # Read the atlas results for the given subject
             atlas_results = nsd.read_atlas_results(subject, data_format=cfg.data.data_format, atlas="nsdgeneral")[0]
@@ -144,8 +168,8 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             )
         # Log the number of voxels in the mask
         logger.info(
-            f"Subject {subject}: Using nsdgeneral mask with {np.sum(atlas_results > 0)} voxels "
-            f"out of {atlas_results.size} total voxels."
+            f"Subject {subject}: Using mask with {np.sum(mask_img.get_fdata() > 0)} voxels "
+            f"out of {mask_img.get_fdata().size} total voxels."
         )
 
         # Process each target variable (graph measure)
@@ -154,31 +178,84 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             desc=f"Processing target variables for subject {subject}",
             total=len(cfg.target_variables),
         ):
+            # Filter out zero values
+            y_full = trial_info_short[target_variable].values
+            valid_indices = np.where(y_full != 0)[0]
+
+            # Filter trial_info and extract corresponding trials
+            trial_info_filtered = trial_info_short.iloc[valid_indices].copy()
+            y = y_full[valid_indices]
+
+            # Extract only the valid trials (much faster than filtering after)
+            X_filtered = betas[:, :, :, trial_info_filtered["trial_index"].values - 1]
+            X = nib.Nifti1Image(X_filtered, affine=affine, header=header)
+
+            logger.info(
+                f"Subject {subject}, {target_variable}: "
+                f"Using {len(valid_indices)} non-zero trials out of {len(trial_info_short)}"
+            )
+
             # Define the target variable
             if cfg.binarize_target:
-                # Binarize the target into "high" and "low" depending on half between min and max
-                median = np.percentile(trial_info_short[target_variable], 50)
-                trial_info_short[target_variable] = (trial_info_short[target_variable] > median).astype(int)
-            y = trial_info_short[target_variable].values
+                # Strategy 1: Z-score thresholding (most robust)
+                if hasattr(cfg, "target_strategy") and cfg.target_strategy == "zscore":
+                    z_scores = np.abs((y - np.mean(y)) / np.std(y))
+                    threshold_indices = z_scores > cfg.get("zscore_threshold", 1.0)
+                    y = y[threshold_indices]
+                    X_filtered = X_filtered[:, :, :, threshold_indices]
+                    trial_info_filtered = trial_info_filtered.iloc[threshold_indices].reset_index(drop=True)
+                    groups = trial_info_filtered["cocoId"].values
+                    X = nib.Nifti1Image(X_filtered, affine=affine, header=header)
+                    y = (y > np.median(y)).astype(int)
+                    logger.info(
+                        f"Subject {subject}, {target_variable}: Using z-score thresholding with {len(y)} samples"
+                    )
+
+                # Strategy 2: Quartile-based split for stronger signal
+                if (hasattr(cfg, "target_strategy") and cfg.target_strategy == "quartile") or cfg.use_quartile_split:
+                    q25, q75 = np.percentile(y, [25, 75])
+                    extreme_indices = (y <= q25) | (y >= q75)
+                    y_extreme = y[extreme_indices]
+                    X_filtered_extreme = X_filtered[:, :, :, extreme_indices]
+                    trial_info_filtered = trial_info_filtered.iloc[extreme_indices].reset_index(drop=True)
+                    groups = trial_info_filtered["cocoId"].values
+                    X = nib.Nifti1Image(X_filtered_extreme, affine=affine, header=header)
+                    y = (y_extreme > np.median(y_extreme)).astype(int)
+                    logger.info(f"Subject {subject}, {target_variable}: Using quartile split with {len(y)} samples")
+                else:
+                    # Apply median split to the non-zero values
+                    median = np.percentile(y, 50)
+                    y = (y > median).astype(int)
+
+                logger.info(
+                    f"Subject {subject}, {target_variable}: Binary split - High: {y.sum()}, Low: {len(y) - y.sum()}"
+                )
 
             # Use cocoId as groups to ensure repetitions of the same stimulus stay together
-            groups = trial_info_short["cocoId"].values
+            groups = trial_info_filtered["cocoId"].values
 
-            # Create a list of train/test splits using GroupKFold
-            group_cv = StratifiedGroupKFold(n_splits=cfg.classifier.cv)
+            # Create a list of train/test splits using appropriate CV
+            if cfg.binarize_target:
+                group_cv = StratifiedGroupKFold(n_splits=cfg.classifier.cv)
+            else:
+                group_cv = GroupKFold(n_splits=cfg.classifier.cv)
             cv_splits = list(group_cv.split(X=np.zeros(len(y)), y=y, groups=groups))
 
-            # Use either a searchlight or a classic decoder on all voxels
-            # Note that the classifier can also be a regressor
             if cfg.use_searchlight:
+                if cfg.classifier.estimator == "ridge" and cfg.binarize_target:
+                    estimator = RidgeClassifierCV(
+                        alphas=[0.1, 1, 10],
+                        cv=cfg.classifier.cv,
+                        scoring=cfg.classifier.scoring,
+                    )
+                elif cfg.classifier.estimator == "ridge":
+                    estimator = RidgeCV(alphas=[0.1, 1, 10], cv=cfg.classifier.cv, scoring=cfg.classifier.scoring)
+                else:
+                    estimator = "ridge_regressor"
                 classifier = SearchLight(
                     mask_img=mask_img,
                     radius=cfg.searchlight.radius,
-                    estimator=(
-                        RidgeCV(alphas=[0.1, 1, 10], cv=cfg.classifier.cv)
-                        if cfg.classifier.estimator == "ridge"
-                        else cfg.classifier.estimator
-                    ),
+                    estimator=estimator,
                     n_jobs=cfg.classifier.n_jobs,
                     scoring=cfg.classifier.scoring,
                     cv=cv_splits,
@@ -187,15 +264,13 @@ def run_searchlight_decoder(cfg: DictConfig) -> None:
             else:
                 classifier = Decoder(
                     mask=mask_img,
-                    estimator=(
-                        RidgeCV(alphas=[0.1, 1, 10], cv=cfg.classifier.cv)
-                        if cfg.classifier.estimator == "ridge"
-                        else cfg.classifier.estimator
-                    ),
+                    estimator=cfg.classifier.estimator,
                     n_jobs=cfg.classifier.n_jobs,
                     scoring=cfg.classifier.scoring,
                     cv=cv_splits,
                     verbose=1,
+                    standardize=False,
+                    screening_percentile=cfg.classifier.screening_percentile,
                 )
 
             # Fit searchlight or decoder

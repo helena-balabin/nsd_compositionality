@@ -2,4 +2,15 @@ data:
   results_csv: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder/mvpa_decoder_results.csv
   output_dir: ${oc.env:LARGE_DATA_PATH}/nsd/mvpa_decoder
 scoring: "accuracy"
-target_variables: ["sg_filtered_depth", "n_filtered_rel", "n_obj"]
+target_variables:
+  [
+    "image_graphs_n_nodes",
+    "image_graphs_n_edges",
+    "image_graphs_depth",
+    "spatial_image_graphs_n_nodes",
+    "spatial_image_graphs_n_edges",
+    "spatial_image_graphs_depth",
+    "action_image_graphs_n_nodes",
+    "action_image_graphs_n_edges",
+    "action_image_graphs_depth",
+  ]
