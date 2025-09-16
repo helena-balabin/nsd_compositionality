@@ -36,6 +36,7 @@ class GraphCLIPConfig(CLIPConfig):
         ),
         graph_pair_type: str = "text",
         pretrained_model_name_or_path: Optional[str] = None,
+        alpha: float = 0.5,
         **kwargs,
     ):
         super().__init__(**kwargs)
@@ -53,3 +54,6 @@ class GraphCLIPConfig(CLIPConfig):
 
         # if provided, load CLIP vision/text from this checkpoint
         self.pretrained_model_name_or_path = pretrained_model_name_or_path
+
+        # alpha for the contrastive loss
+        self.alpha = alpha
