@@ -11,7 +11,7 @@ import nltk
 import pandas as pd
 import penman
 import spacy
-from datasets import DatasetDict, load_dataset
+from datasets import Dataset, DatasetDict, Value, load_dataset
 from dotenv import load_dotenv
 from nltk.corpus import wordnet as wn
 from omegaconf import DictConfig
@@ -73,7 +73,14 @@ def map_vg_to_clip_patch(x, y, width, height, patch_size=32, target_resolution=2
     return patch_index + 1
 
 
-def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name: str) -> Dict[str, Any]:
+def preprocess_split(
+    vg_metadata,
+    nsd_coco_ids,
+    vg_metadata_dir,
+    cfg,
+    split_name: str,
+    vg_coco_overlap: Optional[Dataset],
+) -> Dict[str, Any]:
     """
     Preprocess a split of the VG metadata.
 
@@ -82,6 +89,7 @@ def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name
     :param vg_metadata_dir: The directory containing VG metadata files.
     :param cfg: The Hydra configuration object.
     :param split_name: The name of the split (e.g., "train" or "test").
+    :param vg_coco_overlap: The VG-COCO overlap dataset containing text, if text is to be included.
     :return: The preprocessed VG metadata.
     """
     if split_name == "train":
@@ -116,6 +124,25 @@ def preprocess_split(vg_metadata, nsd_coco_ids, vg_metadata_dir, cfg, split_name
         vg_metadata = vg_metadata.add_column(name="image_graphs", column=graphs)
         vg_metadata = vg_metadata.add_column(name="action_image_graphs", column=action_graphs)
         vg_metadata = vg_metadata.add_column(name="spatial_image_graphs", column=spatial_graphs)
+
+    # Include text if specified in the config
+    if cfg.data.include_text:
+        # Rename "cocoid" in "coco_id" if needed
+        if vg_coco_overlap is not None:
+            # For those entries in vg_metadata that have a matching entry in vg_coco_overlap, add the captions,
+            # Add none otherwise
+            vg_metadata_df = vg_metadata.to_pandas()
+            if "cocoid" in vg_coco_overlap.column_names:
+                vg_coco_overlap = vg_coco_overlap.rename_column("cocoid", "coco_id")
+            vg_coco_overlap_df = vg_coco_overlap.to_pandas()
+            merged_df = vg_metadata_df.merge(
+                vg_coco_overlap_df[[cfg.data.coco_id_col, "sentences_raw", "sentids"]],
+                on=cfg.data.coco_id_col,
+                how="left",
+            )
+            vg_metadata = Dataset.from_pandas(merged_df)
+            # Shuffle the dataset to mix entries with different captions but the same image
+            vg_metadata = vg_metadata.shuffle(seed=cfg.seed)
 
     # Add text graph properties if specified in the config
     if cfg.data.include_text_graphs:
@@ -159,6 +186,16 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         split="train",
     )
 
+    # If text should be added, load COCO captions
+    if cfg.data.include_text:
+        vg_coco_overlap = load_dataset(
+            cfg.data.coco_text_hf_identifier,
+            cache_dir=cfg.data.cache_dir,
+            split="train",
+        )
+    else:
+        vg_coco_overlap = None
+
     # Preprocess train split
     train_metadata = preprocess_split(
         vg_metadata=vg_metadata,
@@ -166,6 +203,7 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         vg_metadata_dir=vg_metadata_dir,
         cfg=cfg,
         split_name="train",
+        vg_coco_overlap=vg_coco_overlap,
     )
 
     # Preprocess test split
@@ -175,7 +213,17 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         vg_metadata_dir=vg_metadata_dir,
         cfg=cfg,
         split_name="test",
+        vg_coco_overlap=vg_coco_overlap,
     )
+
+    # Match data types for pushing to HF hub if needed
+    if cfg.data.include_text:
+        train_metadata = train_metadata.cast_column("coco_id", Value("int64"))  # type: ignore
+        test_metadata = test_metadata.cast_column("coco_id", Value("int64"))  # type: ignore
+        train_metadata = train_metadata.cast_column("sentences_raw", Value("string"))  # type: ignore
+        test_metadata = test_metadata.cast_column("sentences_raw", Value("string"))  # type: ignore
+        train_metadata = train_metadata.cast_column("flickr_id", Value("int64"))  # type: ignore
+        test_metadata = test_metadata.cast_column("flickr_id", Value("int64"))  # type: ignore
 
     # Push both splits to the Hugging Face Hub
     dataset_dict = DatasetDict({"train": train_metadata, "test": test_metadata})
