@@ -188,13 +188,19 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
 
     # If text should be added, load COCO captions
     if cfg.data.include_text:
-        vg_coco_overlap = load_dataset(
+        vg_coco_overlap_train = load_dataset(
             cfg.data.coco_text_hf_identifier,
             cache_dir=cfg.data.cache_dir,
             split="train",
         )
+        vg_coco_overlap_test = load_dataset(
+            cfg.data.coco_text_hf_identifier,
+            cache_dir=cfg.data.cache_dir,
+            split="test",
+        )
     else:
-        vg_coco_overlap = None
+        vg_coco_overlap_test = None
+        vg_coco_overlap_train = None
 
     # Preprocess train split
     train_metadata = preprocess_split(
@@ -203,7 +209,7 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         vg_metadata_dir=vg_metadata_dir,
         cfg=cfg,
         split_name="train",
-        vg_coco_overlap=vg_coco_overlap,
+        vg_coco_overlap=vg_coco_overlap_train,
     )
 
     # Preprocess test split
@@ -213,7 +219,7 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         vg_metadata_dir=vg_metadata_dir,
         cfg=cfg,
         split_name="test",
-        vg_coco_overlap=vg_coco_overlap,
+        vg_coco_overlap=vg_coco_overlap_test,
     )
 
     # Match data types for pushing to HF hub if needed
@@ -224,6 +230,8 @@ def preprocess_vg_for_graphormer(cfg: DictConfig) -> None:
         test_metadata = test_metadata.cast_column("sentences_raw", Value("string"))  # type: ignore
         train_metadata = train_metadata.cast_column("flickr_id", Value("int64"))  # type: ignore
         test_metadata = test_metadata.cast_column("flickr_id", Value("int64"))  # type: ignore
+        train_metadata = train_metadata.cast_column("sentids", Value("int64"))  # type: ignore
+        test_metadata = test_metadata.cast_column("sentids", Value("int64"))  # type: ignore
 
     # Push both splits to the Hugging Face Hub
     dataset_dict = DatasetDict({"train": train_metadata, "test": test_metadata})
