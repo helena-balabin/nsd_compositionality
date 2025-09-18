@@ -1,0 +1,29 @@
+output_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/transformers
+
+data:
+  hf_dataset_identifier: "helena-balabin/vg_actions_spatial_for_graphormer_with_text"
+  cache_dir: ${oc.env:LARGE_DATA_PATH}/huggingface/datasets
+  split: "train"
+  num_proc: 16
+
+model:
+  hidden_size: 512
+  embedding_dim: 512
+  num_hidden_layers: 6
+  dropout: 0.1
+
+training:
+  batch_size: 64
+  learning_rate: 3e-4
+  lr_scheduler_type: "linear"
+  warmup_ratio: 0.1
+  epochs: 10
+  logging_steps: 50
+  push_to_hub: true
+  hub_model_id_base: "helena-balabin/pretrained_graphormer_vg"
+  # Which graph types to train (default: all three)
+  graph_types: ["image_graphs"] # "action_image_graphs", "spatial_image_graphs",
+
+mlflow:
+  tracking_uri: ${oc.env:MLFLOW_TRACKING_URI}
+  experiment_name: "Graphormer Training"

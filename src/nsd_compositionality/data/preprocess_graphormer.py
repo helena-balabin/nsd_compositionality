@@ -189,14 +189,17 @@ def preprocess_item(
 
 
 class GraphCLIPDataCollator:
-    def __init__(self, spatial_pos_max=20, on_the_fly_processing=False):
+    def __init__(self, spatial_pos_max=20, on_the_fly_processing=False, unwrap_dict=False):
         self.spatial_pos_max = spatial_pos_max
         self.on_the_fly_processing = on_the_fly_processing
+        self.unwrap_dict = unwrap_dict
 
     def __call__(self, features: List[dict]) -> Dict[str, Any]:
         # Separate graph_input from the rest
         graph_features = [f["graph_input"] for f in features]
-        non_graph_features = [{k: v for k, v in f.items() if k != "graph_input"} for f in features]
+        # Check if there are any non-graph features
+        if len(features[0].keys()) > 1:
+            non_graph_features = [{k: v for k, v in f.items() if k != "graph_input"} for f in features]
 
         # Process graph_input
         if self.on_the_fly_processing:
@@ -244,9 +247,14 @@ class GraphCLIPDataCollator:
         batch["out_degree"] = batch["in_degree"]
 
         # Use the Hugging Face default collator for non-graph features
-        non_graph_batch = default_data_collator(non_graph_features)
-
-        # Combine graph and non-graph batches
-        combined_batch = {**non_graph_batch, "graph_input": batch}
+        if len(features[0].keys()) > 1:
+            non_graph_batch = default_data_collator(non_graph_features)
+            # Combine graph and non-graph batches
+            combined_batch = {**non_graph_batch, "graph_input": batch}
+        else:
+            if self.unwrap_dict:
+                combined_batch = batch
+            else:
+                combined_batch = {"graph_input": batch}
 
         return combined_batch
